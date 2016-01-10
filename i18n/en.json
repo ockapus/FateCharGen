@@ -1,0 +1,8 @@
+{
+    "@metadata": {
+        "authors": []
+    },
+    "fategameconfig": "Fate: Game Configuration",
+    "fategameconfig-desc": "Game Configuration for Fate, for integration with MUX.",
+    "fatestats": "Fate: Stats"
+}
