@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS /*_*/fate_fractal_stat (
     stat_max_value int default NULL,
     -- Description field for this stat
     stat_description text default NULL,
-    -- Mode this skill belongs to
+    -- Mode this skill belongs to -- fractal_stat_id
     stat_mode int default NULL,
     -- Category this Condition belongs to
     stat_category varchar(128) default NULL,

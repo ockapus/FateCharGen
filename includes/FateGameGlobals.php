@@ -14,6 +14,7 @@ class FateGameGlobals {
     const STAT_CONSEQUENCE = 6;
     const STAT_FATE = 7;
     const STAT_REFRESH = 8;
+    const STAT_MODE = 9;
     
     function getSkillDistributionArray() {
         $array = array();
@@ -38,6 +39,15 @@ class FateGameGlobals {
         $array[6]  = 'Fantastic';
         $array[7]  = 'Epic';
         $array[8]  = 'Legendary';
+        
+        return $array;
+    }
+    
+    function getModeLevels() {
+        $array = array();
+        $array[0] = 'Trained';
+        $array[1] = 'Focused';
+        $array[2] = 'Specialized';
         
         return $array;
     }
