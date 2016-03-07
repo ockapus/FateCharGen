@@ -60,14 +60,14 @@ class SpecialFateGameConfig extends SpecialPage {
                 $distribution = FateGameGlobals::getSkillDistributionArray();
                 $table .= "<table>".
                           "<tr><td class='mw-label'>Game Name:</td><td colspan=3>$game->game_name</td></tr>".
-                          "<tr><td class='mw-label'>Description:</td><td colspan=3>$game->game_description</td></tr>".
+                          "<tr><td class='mw-label' style='vertical-align: top'>Description:</td><td colspan=3>$game->game_description</td></tr>".
                           "<tr><td class='mw-label'>GM:</td><td>".
                           Linker::link(Title::newFromText('User:' . $game->user_name), $game->canon_name, array(), array(), array( 'forcearticlepath' ) ) .
                           "</td>".
-                          "<td class='mw-label'>Game Status:</td><td>$game->game_status</td></tr>".
+                          "<td class='mw-label' nowrap>Game Status:</td><td>$game->game_status</td></tr>".
                           "<tr><td class='mw-label'>Created:</td><td>" . FateGameGlobals::getDisplayDate($game->create_date) . "</td>".
-                          "<td class='mw-label'>Last Modified:</td><td>" . FateGameGlobals::getDisplayDate($game->modified_date) . "</td></tr>".
-                          "<td class='mw-label' style='vertical-align: top'>Starting Aspects:</td><td colspan=3>$game->aspect_count Total";
+                          "<td class='mw-label' nowrap>Last Modified:</td><td>" . FateGameGlobals::getDisplayDate($game->modified_date) . "</td></tr>".
+                          "<td class='mw-label' style='vertical-align: top' nowrap>Starting Aspects:</td><td colspan=3>$game->aspect_count Total";
                 if (count($game->aspects) > 0) {
                     $table .= "<br/>";
                     $list = array();
@@ -85,16 +85,37 @@ class SpecialFateGameConfig extends SpecialPage {
                 $table .= "<tr><td class='mw-label'>Max Starting Skill:</td><td>+$game->skill_max</td></tr>".
                           "<tr><td class='mw-label'>Starting Points:</td><td>" . implode(', ', $game->skill_points) . "</td></tr></table></td></tr>";
                 if (count($game->skills) > 0) {
-                    $table .= "<tr><td class='mw-label'>Skill List:</td><td>";
+                    $table .= "<tr><td class='mw-label' style='vertical-align: top;' nowrap>Skill List:</td><td colspan=3>";
                     $list = array();
                     foreach ($game->skills as $skill) {
-                        $list[] = $skill['label'] . ($skill['mode_cost'] ? ' (' . $skill['mode_cost'] . ')' : '');
+                        $list[] = $skill['label'] . ($skill['mode_cost'] !== null ? ' (' . $skill['mode_cost'] . ')' : '');
                     }
                     $table .= implode(', ', $list) . "</td></tr>";
                 }
-                $table .= "<tr><td class='mw-label'>Refresh Rate:</td><td colspan=3>$game->refresh_rate</td></tr>".
-                          "<tr><td class='mw-label'>Initial Stunt Slots:</td><td colspan=3>$game->stunt_count</td></tr>".
-                          "<tr><td class='mw-label'>Initial Stress Boxes:</td><td colspan=3>$game->stress_count</td></tr>";
+                if (count($game->modes) > 0) {
+                    $table .= "<tr><td class='mw-label' style='vertical-align: top'>Defined Modes:</td><td colspan=3>".
+                              "<table border=1><tr><th>Mode Name</th><th>Cost</th><th>Is Weird?</th><th>Associated Skills</th></tr>";
+                    foreach ($game->modes as $mode) {
+                        $skill_list = array();
+                        foreach ($mode['skill_list'] as $sk) {
+                            foreach ($game->skills as $skill) {
+                                if ($skill['skill_id'] == $sk) {
+                                    $skill_list[] = $skill['label'];
+                                    break;
+                                }
+                            }
+                        }
+                        asort($skill_list);
+                        $table .= "<tr><td style='vertical-align: top'>" . $mode['label'] . "</td>".
+                                  "<td style='vertical-align: top'>" . $mode['cost'] . "</td>".
+                                  "<td style='vertical-align: top'>" . ($mode['is_weird'] ? 'Yes' : 'No') . "</td>".
+                                  "<td style='vertical-align: top'>" . implode(', ', $skill_list) . "</td></tr>";
+                    }
+                    $table .= "</table></td></tr>";
+                }
+                $table .= "<tr><td class='mw-label' nowrap>Refresh Rate:</td><td colspan=3>$game->refresh_rate</td></tr>".
+                          "<tr><td class='mw-label' nowrap>Initial Stunt Slots:</td><td colspan=3>$game->stunt_count</td></tr>".
+                          "<tr><td class='mw-label' nowrap>Initial Stress Boxes:</td><td colspan=3>$game->stress_count</td></tr>";
                 if (count($game->stress_tracks) > 0) {
                     $table .= "<tr><td class='mw-label'>Stress Tracks:</td><td colspan=3>";
                     $list = array();

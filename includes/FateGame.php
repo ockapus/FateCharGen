@@ -111,12 +111,44 @@ class FateGame {
                     $sk = array(
                         'skill_id' => $skill->{game_skill_id},
                         'label' => $skill->{game_skill_label},
-                        'mode_cost' => $skill->{mode_cost}
+                        'mode_cost' => $skill->{mode_cost},
+                        'has_disciplines' => ((bool) $skill->{has_disciplines}),
+                        'only_disciplines' => ((bool) $skill->{only_disciplines})
                     );
                     $this->skills[] = $sk;
                 }
             }
             
+            if ($this->skill_distribution == FateGameGlobals::SKILL_DISTRIBUTION_MODES) {
+                $mode_list = $dbr->select(
+                    'fate_game_mode',
+                    '*',
+                    array( 'game_id' => $game_id ),
+                    __METHOD__,
+                    array( 'ORDER BY' => 'game_mode_label' )
+                );
+                $this->modes = array();
+                foreach ($mode_list as $mode) {
+                    $skill_mode_list = $dbr->select(
+                        'fate_game_mode_skill',
+                        '*',
+                        array( 'game_mode_id' => $mode->{game_mode_id} )
+                    );
+                    $skill_list = array();
+                    foreach ($skill_mode_list as $sm) {
+                        $skill_list[] = $sm->{game_skill_id};
+                    }
+                    $mo = array(
+                        'mode_id' => $mode->{game_mode_id},
+                        'label' => $mode->{game_mode_label},
+                        'cost' => $mode->{mode_cost},
+                        'is_weird' => ((bool) $mode->{is_weird}),
+                        'skill_list' => $skill_list
+                    );
+                    $this->modes[] = $mo;
+                }
+            }
+                
             $stress_list = $dbr->select(
                 'fate_game_stress',
                 '*',

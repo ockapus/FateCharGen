@@ -64,6 +64,19 @@ class FateFractal {
                         $this->stats[$stat->{stat_type}] = array();
                     }
                     $this->stats[$stat->{stat_type}][] = $stat;
+                    if ($this->fate_game->skill_distribution == FateGameGlobals::SKILL_DISTRIBUTION_MODES && $stat->{stat_type} == FateGameGlobals::STAT_MODE) {
+                        if (! is_array($this->skills_by_mode)) {
+                            $this->skills_by_mode = array();
+                        }
+                        $this->skills_by_mode[$stat->{fractal_stat_id}] = array(
+                            'mode_value' => $stat->{stat_value},
+                            'skills_by_level' => array(
+                                0 => array(),
+                                1 => array(),
+                                2 => array()
+                            )
+                        );
+                    }
                 }
             }
             
@@ -77,11 +90,24 @@ class FateFractal {
                     }
                 });
             }
+            if (array_key_exists(FateGameGlobals::STAT_MODE, $this->stats)) {
+                @usort($this->stats[FateGameGlobals::STAT_MODE], function($a, $b) {
+                    if ($a->{stat_value} == $b->{stat_value}) {
+                        return 0;
+                    } else {
+                        return ($b->{stat_value} < $a->{stat_value} ? -1 : 1 );
+                    }
+                });
+                foreach ($this->stats[FateGameGlobals::STAT_SKILL] as $skill) {
+                    $mode = $skill->{stat_mode};
+                    $level = $skill->{stat_value} - $this->skills_by_mode[$mode]['mode_value'];
+                    $this->skills_by_mode[$mode]['skills_by_level'][$level][] = $skill;
+                }
+            }
             if (array_key_exists(FateGameGlobals::STAT_SKILL, $this->stats) && 
                 ($this->fate_game->skill_distribution == FateGameGlobals::SKILL_DISTRIBUTION_PYRAMID || 
                  $this->fate_game->skill_distribution == FateGameGlobals::SKILL_DISTRIBUTION_COLUMNS ||
-                 !($this->stats[FateGameGlobals::STAT_SKILL][0]->{stat_mode} ||
-                  $this->stats[FateGameGlobals::STAT_SKILL][0]->{stat_ordinal}))) {
+                 !$this->stats[FateGameGlobals::STAT_SKILL][0]->{stat_ordinal})) {
                 @usort($this->stats[FateGameGlobals::STAT_SKILL], function($a, $b) {
                     if ($a->{stat_value} == $b->{stat_value}) {
                         return 0;
@@ -134,25 +160,44 @@ EOT;
             $ladder = FateGameGlobals::getLadder();
             $last_label = '';
             $first = 1;
-            $block .= "<tr><td class='section_label'>Skills:</td><td>";
-            
-            foreach ($this->stats[FateGameGlobals::STAT_SKILL] as $skill) {
-                $this_label = $ladder[$skill->{stat_value}];
-                if ($this_label != $last_label) {
-                    $last_label = $this_label;
+            if ($this->fate_game->skill_distribution == FateGameGlobals::SKILL_DISTRIBUTION_MODES) {
+                $block .= "<tr><td class='section_label'>Modes:</td><td>";
+                foreach ($this->stats[FateGameGlobals::STAT_MODE] as $mode) {
+                    $mode_label = $ladder[$mode->{stat_value}] . " (+" . $mode->{stat_value} . ") " . $mode->{stat_field};
+                    $skill_list = array();
+                    for ($i = 2; $i >= 0; $i--) {
+                        foreach ($this->skills_by_mode[$mode->{fractal_stat_id}]['skills_by_level'][$i] as $skill) {
+                            $skill_list[] = "+" . $skill->{stat_value} . " " . $skill->{stat_label};
+                        }
+                    }
                     if (!$first) {
                         $block .= "<br/>";
                     } else {
                         $first = 0;
                     }
-                    $block .= $this_label . " (+" . $skill->{stat_value} . "): ";
-                } else {
-                    $block .= ", ";
+                    $block .= "$mode_label (" . implode(', ', $skill_list) . ")";
                 }
-                $block .= $skill->{stat_label};
-            }
-            if ($last_label) {
                 $block .= "</td></tr>";
+            } else {
+                $block .= "<tr><td class='section_label'>Skills:</td><td>";
+                foreach ($this->stats[FateGameGlobals::STAT_SKILL] as $skill) {
+                    $this_label = $ladder[$skill->{stat_value}];
+                    if ($this_label != $last_label) {
+                        $last_label = $this_label;
+                        if (!$first) {
+                            $block .= "<br/>";
+                        } else {
+                            $first = 0;
+                        }
+                        $block .= $this_label . " (+" . $skill->{stat_value} . "): ";
+                    } else {
+                        $block .= ", ";
+                    }
+                    $block .= $skill->{stat_label};
+                }
+                if ($last_label) {
+                    $block .= "</td></tr>";
+                }
             }
         }
         
@@ -201,6 +246,13 @@ EOT;
                     border-radius: 0 10px 0 0;
                     font-family: Tahoma, Geneva, sans-serif;
                 }
+                
+                #charsheet .modes h3 { color: #295079; font-family: Tahoma, Geneva, sans-serif; text-align: right; vertical-align: middle; padding: 0px; margin: 0px; }
+                #charsheet .modes h4 { color: #295079; font-family: Tahoma, Geneva, sans-serif; white-space: nowrap; padding: 0px; }
+                #charsheet .modes { width: 100%; border-spacing: 0px; margin-bottom: 0.5em; }
+                #charsheet .modes td { padding: 3px; }
+                #charsheet .modes span { font-weight: bold; }
+                #charsheet .modes tr:nth-child(even) { background-color: #BDD1EC; }
 
                 #charsheet .block { border: 2px solid #295079; width: auto; margin: 0 0 0.5em 0;padding: 5px 15px; position: relative; }
                 #charsheet .block.consequence { margin-left: 1em; }
@@ -242,6 +294,33 @@ EOT;
                     $count %= 2;
                 }
                 $sheet .= "<tr>" . $rows[0] . "</tr><tr>" . $rows[1] . "</tr></table>";
+            } elseif ($this->fate_game->skill_distribution == FateGameGlobals::SKILL_DISTRIBUTION_MODES) {
+                $ladder = FateGameGlobals::getLadder();
+                $levels = array_reverse(FateGameGlobals::getModeLevels(), true);
+                $sheet .= "<table class='modes'><tr><td>&nbsp;</td>";
+                foreach ($this->stats[FateGameGlobals::STAT_MODE] as $mode) {
+                    $mode_label = strtoupper($ladder[$mode->{stat_value}] . " (+" . $mode->{stat_value} . ") " . $mode->{stat_field});
+                    $sheet .= "<td><h4>$mode_label</h4></td>";
+                }
+                $sheet .= "</tr>";
+                foreach ($levels as $level => $label) {
+                    $sheet .= "<tr><td><h3>" . strtoupper($label) . "</h3></td>";
+                    foreach ($this->stats[FateGameGlobals::STAT_MODE] as $mode) {
+                        $this_mode = $this->skills_by_mode[$mode->{fractal_stat_id}];
+                        if (count($this_mode['skills_by_level'][$level]) > 0) {
+                            $level_label = $ladder[$this_mode['mode_value'] + $level] . " (+" . ($this_mode['mode_value'] + $level) . "):";
+                            $label_list = array();
+                            foreach ($this_mode['skills_by_level'][$level] as $skill) {
+                                $label_list[] = $skill->{stat_label};
+                            }
+                            $sheet .= "<td><span>$level_label</span> " . implode(", ", $label_list) . "</td>";
+                        } else {
+                            $sheet .= "<td>&nbsp;</td>";
+                        }
+                    }
+                    $sheet .= "</tr>";
+                }
+                $sheet .= "</table>";
             }
             /* Other Skill Distributions eventually go here */
         }

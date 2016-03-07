@@ -12,7 +12,9 @@ CREATE TABLE IF NOT EXISTS /*_*/fate_game_mode (
     -- Name of this mode
     game_mode_label varchar(64) default NULL,
     -- What's the cost for characters using this mode?
-    mode_cost int default NULL
+    mode_cost int default NULL,
+    -- Boolean Flag: Is this a weird mode, or a default EZ-mode?
+    is_weird tinyint default NULL
 ) /*$wgDBTableOptions*/;
 
 CREATE INDEX /*i*/fgm_game_id ON /*_*/fate_game_mode (game_id);
