@@ -55,7 +55,7 @@ class FateGame {
                    'g.create_date',
                    'g.modified_date' ),
             array( 'r.register_id = g.register_id',
-                   game_id => $game_id )
+                   'g.game_id' => $game_id )
         );
         
         if ($data) {

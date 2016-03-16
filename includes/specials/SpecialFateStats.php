@@ -20,6 +20,8 @@ class SpecialFateStats extends SpecialPage {
     public function execute( $sub ) {
         $user = $this->getUser();
         $out = $this->getOutput();
+        $request = $this->getRequest();
+        $action = $request->getVal('action');
         
         $this->setHeaders();
         $out->setPageTitle( $this->msg( 'fatestats' ) );
@@ -31,46 +33,185 @@ class SpecialFateStats extends SpecialPage {
             $out->addHTML("<div class='error' style='font-weight: bold; color: red'>You don't have permission to access this page.</div>");
         } else {
             if ($sub == 'View') {
-                $out->addWikiText('* View a specific Stat Block');
-                $this->viewFractalBlock();
+                $out->addWikiText('* View a specific Stat Block');        
+                $fractal_id = $request->getInt('fractal_id');
+                $this->viewFractalBlock($fractal_id);
             } elseif ($sub == 'ViewSheet') {
                 $out->addWikiText('* View a specific sheet');
                 $this->viewFractalSheet();
             } elseif ($sub == 'Edit') {
                 $out->addWikiText('* Edit a specific stat block');
-            } elseif ($sub == 'Create') {
-                $out->addWikiText('* Create a New Fractal');
-                $this->createFractal();
             } elseif ($sub == 'Delete') {
                 $out->addWikiText('* Delete a specific Fractal');
+            } elseif ($sub == 'Create') {
+                $result = array();
+                if ($action == 'create') {
+                    $result = $this->createFractal();
+                }
+                if (count($result) == 0 || $result['error']) {
+                    $this->createFractalForm($result);
+                } else {
+                    // When it exists: go to the edit page
+                    $this->viewFractalBlock(intval($result['msg']));
+                }
             } else {
-                $out->addWikiText('* List All Fractals');
                 $this->listAllFractals();
             }
         }   
     }
     
     private function createFractal() {
+        $request = $this->getRequest();
+        $result = array( 'error' => 0 );
+    
+        $new_fractal = array(
+            'game_id' => $request->getVal('game_id'),
+            'fractal_type' => ($request->getVal('fractal_type') == -1 ? $request->getVal('new_fractal_type') : $request->getVal('fractal_type')),
+            'fractal_name' => $request->getVal('fractal_name')
+        );
+        // TODO: handling for is_private
+
+        if ($new_fractal['game_id'] == 'empty') {
+            $result['error'] = 1;
+            $result['msg'] = 'Please select a game to create the fractal for.';
+        } elseif (!$new_fractal['fractal_type']) {
+            $result['error'] = 1;
+            $result['msg'] = 'Please assign a type for the new fractal.';
+        } elseif ($new_fractal['fractal_type'] == 'Character') {
+            $result['error'] = 1;
+            $result['msg'] = '"Character" is a reserved type, only available through chargen.';
+        } elseif (!$new_fractal['fractal_name']) {
+            $result['error'] = 1;
+            $result['msg'] = 'Please supply a name for the new fractal.';
+        } else {
+            $dbr = wfGetDB(DB_SLAVE);
+            $check_fractal = $dbr->selectRow(
+                array( 'f' => 'fate_fractal' ),
+                array( 'f.fractal_id' ),
+                array( 'f.game_id' => $new_fractal['game_id'],
+                       'f.fractal_type' => $new_fractal['fractal_type'],
+                       'f.fractal_name' => $new_fractal['fractal_name'] )
+            );
+            if ($check_fractal) {
+                $result['error'] = 1;
+                $result['msg'] = 'Fractal with that name and type already exists.';
+            } else {
+                $dbw = wfGetDB(DB_MASTER);
+                $new_fractal['create_date'] = $dbw->timestamp();
+                $dbw->insert( 'fate_fractal', $new_fractal );
+                $result['msg'] = $dbw->insertId();
+            }
+        }
+        
+        return $result;
+    }
+        
+    
+    private function createFractalForm( $result ) {
         $user = $this->getUser();
         $out = $this->getOutput();
         $request = $this->getRequest();
         
-        $form_url = $this->getPageTitle()->getSubpage("Create")->getLinkURL();
-        $fractal_name = $request->getVal('new_fractal');
+        // TODO: handling for is_private
+        
+        $form_url = $this->getPageTitle()->getSubPage('Create')->getLinkURL();
+        $game_id = $request->getVal('game_id');
+        $fractal_type = $request->getVal('fractal_type');
+        $fractal_name = $request->getVal('fractal_name');
+        $new_fractal_type = $request->getVal('new_fractal_type');
+        $action = $request->getVal('action');
+        
+        $game_list = $this->getGameListSelect($game_id);
+        $fractal_data = $this->getFractalJSArray();
         $form = <<< EOT
+            <script type='text/javascript'>
+                $fractal_data
+                var passed_type = '$fractal_type';
+                
+                function updateFractalTypes() {
+                    var game = document.getElementById('cfgame');
+                    var type = document.getElementById('cftype');
+                    while (type.options.length > 0) {
+                        type.remove(0);
+                    }
+                    var newOption;
+                    if (game.value == 'empty') {
+                        newOption = document.createElement('option');
+                        newOption.value = '';
+                        newOption.appendChild(document.createTextNode('Select a game first'));
+                        type.appendChild(newOption);
+                        type.disabled = true;
+                    } else {
+                        if (game.value in fractalList) {
+                            typeList = fractalList[game.value];
+                            for (var i = 0; i < typeList.length; i++) {
+                                newOption = document.createElement('option');
+                                newOption.value = typeList[i];
+                                newOption.appendChild(document.createTextNode(typeList[i]));
+                                type.appendChild(newOption);
+                            }
+                        }
+                        newOption = document.createElement('option');
+                        newOption.value = -1;
+                        newOption.appendChild(document.createTextNode('Create New Fractal Type'));
+                        type.appendChild(newOption);
+                        type.disabled = false;
+                    }
+                    if (passed_type) {
+                        type.value = passed_type;
+                    }
+                    updateNewFractalType();
+                }
+                
+                function updateNewFractalType() {
+                    var type = document.getElementById('cftype');
+                    var row = document.getElementById('new_type_row');
+                    if (type.value == -1) {
+                        row.style.display = 'table-row';
+                    } else {
+                        row.style.display = 'none';
+                    }
+                }
+            </script>
             <form action='$form_url' method='post'>
+                <input type='hidden' name='action' value='create'/>
                 <fieldset>
                     <legend>Create New Fractal</legend>
-                    <input type='text' name='new_fractal' size='35'/>
-                    <input type='submit' value='Create'/>
+                    <table>
+                        <tbody>
+                        <tr>
+                            <td class='mw-label'><label for='cfgame'>Select Game:</label></td>
+                            <td class='mw-input'>$game_list</td>
+                        </tr>
+                        <tr>
+                            <td class='mw-label'><label for='cftype'>Fractal Type:</label></td>
+                            <td class='mw-input'>
+                                <select id='cftype' name='fractal_type' disabled onChange='updateNewFractalType();'>
+                                    <option value=''>Select a game first</option>
+                                </select>
+                            </td>
+                        </tr>
+                        <tr id='new_type_row' style='display:none'>
+                            <td class='mw-label'>&nbsp;</td>
+                            <td class='mw-input'><input id='cfnewtype' name='new_fractal_type' value='$new_fractal_type' type='text' size='35' placeholder='New Fractal Type'/></td>
+                        </tr>
+                        <tr>
+                            <td class='mw-label'><label for='cfname'>New Fractal Name:</label></td>
+                            <td class='mw-input'><input id='cfname' type='text' name='fractal_name' value='$fractal_name' size='35'/></td>
+                        </tr>
+                    </table>
+                    <span class='mw-htmlform-submit-buttons'>
+                        <input class='mw-htmlform-submit' type='submit' value='Create'/>
+                    </span>
                 </fieldset>
             </form>
+            <script type='text/javascript'>updateFractalTypes();</script>
 EOT;
 
-        $out->addHTML($form);
-        if ($fractal_name) {
-            $out->addWikiText("* $fractal_name");
+        if ($action && $result['error']) {
+            $out->addWikiText("'''" . $result['msg'] . "'''");
         }
+        $out->addHTML($form);
     }
 
     
@@ -78,6 +219,8 @@ EOT;
         $user = $this->getUser();
         $out  = $this->getOutput();
         $dbr = wfGetDB(DB_SLAVE);
+        
+        // TODO: integrate TablePager into this. See SpecialBlockList as framework
         
         $fractal_list = $dbr->select(
             array( 'f' => 'fate_fractal',
@@ -103,7 +246,7 @@ EOT;
                    'g' => array( 'JOIN', 'f.game_id = g.game_id' ) )
         );
         
-        $table = "<table border=1 cellspacing=3 cellpadding=3>".
+        $table = "<table class='wikitable'>".
                  "<tr><th>Fractal Name</th><th>Fractal Type</th><th>Game</th><th>Player</th><th>Status</th></tr>";
         if ($fractal_list->numRows() == 0) {
             $table .= "<tr><td colspan=100%>No Fractals Found</td></tr>";
@@ -144,12 +287,10 @@ EOT;
         $out->addHTML($table);
     }
     
-    private function viewFractalBlock() {
+    private function viewFractalBlock( $fractal_id ) {
         $user = $this->getUser();
         $out = $this->getOutput();
-        $request = $this->getRequest();
-        
-        $fractal_id = $request->getInt('fractal_id');
+
         if ($fractal_id) {
             $fractal = new FateFractal($fractal_id);
             $table = '';
@@ -182,6 +323,75 @@ EOT;
         } else {
             $out->addHTML("<div class='error' style='font-weight: bold; color: red'>Missing fractal_id argument; don't know which game to show.</div>");
         }
+    }
+    
+    private function getGameListSelect($game_id) {
+        $user = $this->getUser();
+        $dbr = wfGetDB(DB_SLAVE);
+        
+        $games = $dbr->select(
+            array( 'g' => 'fate_game',
+                   'r' => 'muxregister_register' ),
+            array( 'r.register_id',
+                   'g.game_id',
+                   'g.game_name' ),
+            array( 'r.register_id = g.register_id' )
+        );
+        
+        $select = "<select name='game_id' id='cfgame' onchange='updateFractalTypes()'>";
+        if ($games->numRows() > 0) {
+            $selected = ($game_id == 'empty' || !$game_id ? 'selected' : '');
+            $select .= "<option value='empty' $selected>Please select a game</option>";
+            foreach ($games as $game) {
+                $selected = ($game_id == $game->{game_id} ? 'selected' : '');
+                $select .= "<option value='" . $game->{game_id} . "' $selected>" . $game->{game_name} . "</option>";
+            }
+        } else {
+            $select .= "<option value=''>No valid games found; please create one before creating associated fractals.</option>";
+        }
+        $select .= "</select>";
+        
+        return $select;
+    }
+    
+    private function getFractalJSArray() {
+        $user = $this->getUser();
+        $dbr = wfGetDB(DB_SLAVE);
+        
+        $fractals = $dbr->select(
+            array( 'f' => 'fate_fractal'),
+            array( 'f.fractal_type',
+                   'f.game_id' ),
+            array(),
+            __METHOD__,
+            array( 'DISTINCT',
+                   'ORDER BY' => array( 'game_id', 'fractal_type' ) )
+        );
+        
+        $js = "var fractalList = new Array();";
+        if ($fractals->numRows() > 0) {
+            $this_id = -1;
+            $this_list = array();
+            foreach ($fractals as $fractal) {
+                if ($fractal->{game_id} != $this_id) {
+                    if ($this_id != -1) {
+                        $js .= "fractalList[$this_id] = [" . implode(',', $this_list) . "];";
+                        if (count($this_list) > 0) {
+                            $this_list = array();
+                        }
+                    }
+                    $this_id = $fractal->{game_id};
+                }
+                // 'Character' is a protected type, handled by full chargen
+                if ($fractal->{fractal_type} == 'Character') {
+                    continue;
+                }
+                $this_list[] = "'" . $fractal->{fractal_type} . "'";
+            }
+            $js .= "fractalList[$this_id] = [" . implode(',', $this_list) . "];";
+        }
+            
+        return $js;
     }
     
     protected function getGroupName() {
