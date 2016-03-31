@@ -76,6 +76,7 @@ class FateGame {
             $this->stress_count = $data->{stress_count};
             $this->use_consequences = ((bool) $data->{use_consequences});
             $this->private_sheet = ((bool) $data->{private_sheet});
+            $this->use_robo_refresh = ((bool) $data->{use_robo_refresh});
             $this->create_date = $data->{create_date};
             $this->modified_date = $data->{modified_date};
             
@@ -106,6 +107,7 @@ class FateGame {
                 array( 'ORDER BY' => 'game_skill_label' )
             );
             $this->skills = array();
+            $this->skills_by_id = array();
             if ($skill_list->numRows() > 0) {
                 foreach ($skill_list as $skill) {
                     $sk = array(
@@ -116,6 +118,7 @@ class FateGame {
                         'only_disciplines' => ((bool) $skill->{only_disciplines})
                     );
                     $this->skills[] = $sk;
+                    $this->skills_by_id[$sk['skill_id']] = $sk;
                 }
             }
             
@@ -128,6 +131,7 @@ class FateGame {
                     array( 'ORDER BY' => 'game_mode_label' )
                 );
                 $this->modes = array();
+                $this->modes_by_id = array();
                 foreach ($mode_list as $mode) {
                     $skill_mode_list = $dbr->select(
                         'fate_game_mode_skill',
@@ -146,6 +150,7 @@ class FateGame {
                         'skill_list' => $skill_list
                     );
                     $this->modes[] = $mo;
+                    $this->modes_by_id[$mo['mode_id']] = $mo;
                 }
             }
                 

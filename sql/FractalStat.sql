@@ -1,7 +1,7 @@
 -- Fractal stats table setup for FateCharGen extension
 -- Created originally for aliencity.org
 -- porpentine@gmail.com
--- Last Update: December 3, 2015
+-- Last Update: March 26, 2016
 
 -- Add primary fractal stat table
 CREATE TABLE IF NOT EXISTS /*_*/fate_fractal_stat (
@@ -25,12 +25,14 @@ CREATE TABLE IF NOT EXISTS /*_*/fate_fractal_stat (
     stat_description text default NULL,
     -- Mode this skill belongs to -- fractal_stat_id
     stat_mode int default NULL,
-    -- Category this Condition belongs to
-    stat_category varchar(128) default NULL,
     -- Is this stat part of a shared fractal? If so, what is the ID?
     shared_fractal_id int default NULL,
     -- What order should this stat be displayed in compared with others in the same section?
-    stat_ordinal int default NULL
+    stat_ordinal int default NULL,
+    -- Boolean flag: when using the mode system, this is a discipline of a primary skill (ie Engineering, for Science)
+    is_discipline tinyint default NULL,
+    -- For Modes, the id of the game level definition 
+    mode_parent_id int default NULL
 ) /*$wgDBTableOptions*/;
 
 CREATE INDEX /*i*/ffs_fractal_id ON /*_*/fate_fractal_stat (fractal_id);

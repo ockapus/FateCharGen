@@ -14,6 +14,8 @@ class FateFractal {
     public $frozen_date;
     public $stats;
     
+    // TODO: Implement handling for Conditions
+    
     public function __construct( $fractal_id ) {
         $this->fractal_id = $fractal_id;
         
@@ -58,11 +60,13 @@ class FateFractal {
                 array( 'ORDER BY' => array( 'stat_type', 'stat_ordinal', 'stat_field' ) )
             );
             $this->stats = array();
+            $this->stats_by_id = array();
             if ($stat_data->numRows() > 0) {
                 foreach ($stat_data as $stat) {
                     if (! is_array($this->stats[$stat->{stat_type}]) ) {
                         $this->stats[$stat->{stat_type}] = array();
                     }
+                    $this->stats_by_id[$stat->{fractal_stat_id}] = $stat;
                     $this->stats[$stat->{stat_type}][] = $stat;
                     if ($this->fate_game->skill_distribution == FateGameGlobals::SKILL_DISTRIBUTION_MODES && $stat->{stat_type} == FateGameGlobals::STAT_MODE) {
                         if (! is_array($this->skills_by_mode)) {
@@ -98,10 +102,12 @@ class FateFractal {
                         return ($b->{stat_value} < $a->{stat_value} ? -1 : 1 );
                     }
                 });
-                foreach ($this->stats[FateGameGlobals::STAT_SKILL] as $skill) {
-                    $mode = $skill->{stat_mode};
-                    $level = $skill->{stat_value} - $this->skills_by_mode[$mode]['mode_value'];
-                    $this->skills_by_mode[$mode]['skills_by_level'][$level][] = $skill;
+                if (array_key_exists(FateGameGlobals::STAT_SKILL, $this->stats)) {
+                    foreach ($this->stats[FateGameGlobals::STAT_SKILL] as $skill) {
+                        $mode = $skill->{stat_mode};
+                        $level = $skill->{stat_value} - $this->skills_by_mode[$mode]['mode_value'];
+                        $this->skills_by_mode[$mode]['skills_by_level'][$level][] = $skill;
+                    }
                 }
             }
             if (array_key_exists(FateGameGlobals::STAT_SKILL, $this->stats) && 
@@ -115,6 +121,78 @@ class FateFractal {
                         return ($a->{stat_value} < $b->{stat_value} ? 1 : -1);
                     }
                 });
+            }
+        }
+    }
+    
+    public function resetModeSkills() {
+        if ($this->fate_game->skill_distribution == FateGameGlobals::SKILL_DISTRIBUTION_MODES) {
+            $dbr = wfGetDB(DB_SLAVE);
+            $dbw = wfGetDB(DB_MASTER);
+         
+            // Delete Current skills
+            $dbw->delete(
+                'fate_fractal_stat',
+                array( 'fractal_id' => $this->fractal_id,
+                       'stat_type' => FateGameGlobals::STAT_SKILL )
+            );
+            
+            // Get modes
+            $modes = $dbr->select(
+                'fate_fractal_stat',
+                '*',
+                array( 'fractal_id' => $this->fractal_id,
+                       'stat_type' => FateGameGlobals::STAT_MODE )
+            );
+            
+            // Get skills per mode
+            $new_skills = array();
+            $levels = array();
+            if ($modes->numRows() > 0) {
+                foreach ($modes as $mode) {
+                    $levels[] = $mode->{stat_value};
+                    foreach ($this->fate_game->modes_by_id[$mode->{mode_parent_id}]['skill_list'] as $skill_id) {
+                        $new_skills[$mode->{stat_value}][] = array( 'id' => $skill_id, 'value' => 0, 'mode' => $mode->{fractal_stat_id} );
+                    }
+                }
+            }
+            
+            // Promote skills
+            sort($levels);
+            $sub = $levels;
+            foreach ($levels as $level) {
+                array_shift($sub);
+                if (count($sub) == 0) {
+                    break;
+                }
+                foreach ($sub as $s) {
+                    foreach ($new_skills[$level] as $base_index => $base_skill) {
+                        foreach ($new_skills[$s] as $next_index => $next_skill) {
+                            if ($base_skill['id'] == $next_skill['id']) {
+                                $new_skills[$s][$next_index]['value'] += $base_skill['value'] + 1;
+                                unset($new_skills[$level][$base_index]);
+                                continue;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Save new skills
+            foreach ($new_skills as $mode_level => $skill_list) {
+                foreach ($skill_list as $skill) {
+                    $inserts = array( 
+                        'fractal_id' => $this->fractal_id,
+                        'stat_type' => FateGameGlobals::STAT_SKILL,
+                        'stat_label' => $this->fate_game->skills_by_id[$skill['id']]['label'],
+                        'stat_value' => ($mode_level + $skill['value']),
+                        'stat_mode' => $skill['mode']
+                    );
+                    $dbw->insert(
+                        'fate_fractal_stat',
+                        $inserts
+                    );
+                }
             }
         }
     }

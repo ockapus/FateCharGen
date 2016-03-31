@@ -98,12 +98,7 @@ class SpecialFateGameConfig extends SpecialPage {
                     foreach ($game->modes as $mode) {
                         $skill_list = array();
                         foreach ($mode['skill_list'] as $sk) {
-                            foreach ($game->skills as $skill) {
-                                if ($skill['skill_id'] == $sk) {
-                                    $skill_list[] = $skill['label'];
-                                    break;
-                                }
-                            }
+                            $skill_list[] = $game->skills_by_id[$sk]['label'];
                         }
                         asort($skill_list);
                         $table .= "<tr><td style='vertical-align: top'>" . $mode['label'] . "</td>".
@@ -135,6 +130,8 @@ class SpecialFateGameConfig extends SpecialPage {
                     $table .= "<tr><td class='mw-label'>Conditions:</td><td colspan=3></td></tr>";
                 }     
                 $table .= "<tr><td class='mw-label'>Private Sheets:</td><td colspan=3>" . ($game->private_sheet ? 'Yes' : 'No') . "</td></tr>";
+                $table .= "<tr><td class='mw-label'>Use Atomic Robo style Refresh (Aspect count, don't subtract stunts):</td><td colspan=3>".
+                          ($game->use_robo_refresh ? 'Yes' : 'No') . "</td></tr>";
                 $table .= "</table>";
                 
                 if(count($game->fractals) > 0) {

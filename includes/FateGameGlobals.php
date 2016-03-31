@@ -43,11 +43,50 @@ class FateGameGlobals {
         return $array;
     }
     
+    function getConditionCategories() {
+        $array = array();
+        $array[1] = 'Fleeting';
+        $array[2] = 'Sticky';
+        $array[4] = 'Lasting';
+        
+        return $array;
+    }
+    
     function getModeLevels() {
         $array = array();
         $array[0] = 'Trained';
         $array[1] = 'Focused';
         $array[2] = 'Specialized';
+        
+        return $array;
+    }
+    
+    function getStatLabels() {
+        $array = array();
+        $array[self::STAT_ASPECT] = 'Aspects';
+        $array[self::STAT_SKILL] = 'Skills';
+        $array[self::STAT_STUNT] = 'Stunts';
+        $array[self::STAT_STRESS] = 'Stresses';
+        $array[self::STAT_CONDITION] = 'Conditions';
+        $array[self::STAT_CONSEQUENCE] = 'Consequences';
+        $array[self::STAT_FATE] = 'Fate Points';
+        $array[self::STAT_REFRESH] = 'Refresh Rate';
+        $array[self::STAT_MODE] = 'Modes';
+        
+        return $array;
+    }
+    
+    function getStatConsts() {
+        $array = array();
+        $array['aspect'] = self::STAT_ASPECT;
+        $array['skill'] = self::STAT_SKILL;
+        $array['stunt'] = self::STAT_STUNT;
+        $array['stress'] = self::STAT_STRESS;
+        $array['condition'] = self::STAT_CONDITION;
+        $array['consequence'] = self::STAT_CONSEQUENCE;
+        $array['fate'] = self::STAT_FATE;
+        $array['refresh'] = self::STAT_REFRESH;
+        $array['mode'] = self::STAT_MODE;
         
         return $array;
     }
