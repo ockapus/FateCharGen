@@ -23,4 +23,46 @@ class FateCharGenHooks {
         $updater->addExtensionTable( 'fate_fractal_stat', __DIR__ . '/sql/FractalStat.sql' );
         return true;
     }
+    
+    public static function addContentActions( &$skinTemplate, &$links ) {
+        $user = $skinTemplate->getUser();
+        $title = $skinTemplate->getTitle();
+        $request = $skinTemplate->getRequest();
+
+        $fractal_id = $request->getVal('fractal_id');
+        
+        $subs = split('/', $title->getSubpageText());
+        $sub = array_pop($subs);
+        
+        if (1) {
+            // Expand this at some point to only allow specific gms to edit specific things
+            //$fractal = new FateFractal($fractal_id);
+        }
+        
+        // Edit and View links for the FateStats special page
+        if (
+            $user->isAllowed('fategm') &&
+            $title->isSpecial( 'FateStats' ) &&
+            ($sub == 'Edit' || $sub == 'View' || $sub == 'ViewSheet' ) &&
+            $fractal_id )
+        {            
+            $view = SpecialPage::getTitleFor('FateStats', 'View');
+            $edit = SpecialPage::getTitleFor('FateStats', 'Edit');
+            $view_class = ($sub == 'Edit' ? false : 'selected');
+            $edit_class = ($sub == 'Edit' ? 'selected' : false );
+            
+            $links['views'][$title->getNamespaceKey()] = array (
+                'class' => $view_class,
+                'text' => 'View',
+                'href' => $view->getFullUrl("fractal_id=$fractal_id")
+            );
+            $links['views']['edit'] = array(
+                'class' => $edit_class,
+                'text' => 'Edit',
+                'href' => $edit->getFullUrl("fractal_id=$fractal_id")
+            );
+        }        
+        
+        return true;
+    }
 }

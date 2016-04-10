@@ -123,21 +123,13 @@ class SpecialFateStats extends SpecialPage {
             } elseif ($sub == 'Edit') {
                 $results = array();
                 if ($action == 'edit') {
-                    $results = $this->processFractalEditsForm();
-                    //$out->addWikiText(print_r($results, true));
+                    $results = $this->processFractalEditForm();
                     if (count($results['error']) == 0) {
                         $this->saveFractalEdits($fractal_id, $results);
-                        if ($sheet) {
-                            $this->viewFractalSheet($fractal_id);
-                        } else {
-                            $this->viewFractalBlock($fractal_id);
-                        }
-                    } else {
-                        $this->editFractal($fractal_id, $sheet, $results);
+                        $results = $this->cleanResults($results);
                     }
-                } else {
-                    $this->editFractal($fractal_id, $sheet, $results);
                 }
+                $this->editFractal($fractal_id, $sheet, $results);
             } elseif ($sub == 'Delete') {
                 $out->addWikiText('* Delete a specific Fractal');
             } elseif ($sub == 'Create') {
@@ -155,6 +147,14 @@ class SpecialFateStats extends SpecialPage {
                 $this->listAllFractals();
             }
         }   
+    }
+    
+    private function cleanResults( $results ) {
+        $results['form'] = array();
+        foreach ($results['new']  as $type => $array) {
+            $results['new'][$type]['max'] = 1;
+        }
+        return $results;
     }
     
     private function saveFractalEdits( $fractal_id, $results ) {
@@ -227,7 +227,7 @@ class SpecialFateStats extends SpecialPage {
         }
     }
     
-    private function processFractalEditsForm() {
+    private function processFractalEditForm() {
         $request = $this->getRequest();
         $output = $this->getOutput();
         $data = $request->getValues();
@@ -547,20 +547,18 @@ EOT;
         $user = $this->getUser();
         $out = $this->getOutput();
         
+        $table = '';
         if ($fractal_id) {
             $fractal = new FateFractal($fractal_id);
-            $table = '';
             if ($fractal->name) {
-                $subpage = ($sheet ? 'ViewSheet' : 'View');
-                $table .= Linker::link($this->getPageTitle()->getSubpage($subpage), 'Return to View', array(), array( 'fractal_id' => $fractal_id ), array( 'forcearticalpath' ) );
                 $table .= $this->getFractalEditForm($fractal, $sheet, $results);
             } else {
                 $table .= "<div class='error' style='font-weight: bold; color: red'>No data found for that fractal_id; please check URL and try again.</div>";
             }
-            $out->addHTML($table);
         } else {
-            $out->addHTML("<div class='error' style='font-weight: bold; color: red'>Missing fractal_id argument; don't know which fractal to show.</div>");
+            $table .= "<div class='error' style='font-weight: bold; color: red'>Missing fractal_id argument; don't know which fractal to show.</div>";
         }
+        $out->addHTML($table);
     }
     
     private function getFractalEditForm( $fractal, $sheet, $results ) {
@@ -809,8 +807,12 @@ EOT;
 EOT;
 
         // Did we have errors? If show, display a big warning here
-        if (count($results['error']) > 0) {
-            $form .= "<div class='errorbox'><strong>Editing error.</strong><br/>One or more required fields seem to have been cleared in existing stats. Please correct them below, and resubmit to save edits.</div>";
+        if (count($results) > 0) {
+            if (count($results['error']) > 0) {
+                $form .= "<div class='errorbox'><strong>Editing error.</strong><br/>One or more required fields seem to have been cleared in existing stats. Please correct them below, and resubmit to save edits.</div>";
+            } else {
+                $form .= "<div class='successbox'><strong>Stat updates saved.</strong></div>";
+            }
         }
         
         $form .= <<<EOT
@@ -960,6 +962,7 @@ EOT;
         return $js;
     }
     
+    // TODO: Consolidate this function with function in SpecialFateGameConfig? - move to FateGame?
     private function getGameSkillsJS( $fractal ) {
         $js = "var skillList = new Array();";
         foreach ($fractal->fate_game->skills as $skill) {
@@ -1111,7 +1114,6 @@ EOT;
             $fractal = new FateFractal($fractal_id);
             $table = '';
             if ($fractal->name) {
-                $table .= Linker::link($this->getPageTitle()->getSubpage('Edit'), 'Edit', array(), array( 'fractal_id' => $fractal_id ), array( 'forcearticalpath' ) );
                 $table .= $fractal->getFractalBlock();
             } else {
                 $table .= "<div class='error' style='font-weight: bold; color: red'>No data found for that fractal_id; please check URL and try again.</div>";

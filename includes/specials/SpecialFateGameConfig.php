@@ -20,6 +20,8 @@ class SpecialFateGameConfig extends SpecialPage {
     public function execute( $sub ) {
         $user = $this->getUser();
         $out = $this->getOutput();
+        $request = $this->getRequest();
+        $action = $request->getVal('action');
         
         $this->setHeaders();
         $out->setPageTitle( $this->msg( 'fategameconfig' ) );
@@ -31,11 +33,22 @@ class SpecialFateGameConfig extends SpecialPage {
         } elseif (!$user->isAllowed('fategm')) {
             $out->addHTML("<div class='error' style='font-weight: bold; color: red'>You don't have permission to access this page.</div>");
         } else {
+            $game_id = $request->getInt('game_id');
             if ($sub == 'View') {
                 $out->addWikiText('* View a specific Game');
                 $this->viewSpecificGame();
             } elseif ($sub == 'Edit') {
-                $out->addWikiText('* Edit a specific Game');
+                if ($action == 'edit') {
+                    $results = $this->processEditGameForm();
+                    if (count($results['error']) == 0) {
+                        $this->saveGameEdits($game_id, $results);
+                        $this->viewSpecificGame();
+                    } else {
+                        $this->editGame($results);
+                    }
+                } else {
+                    $this->editGame();
+                }
             } elseif ($sub == 'Create') {
                 $out->addWikiText('* Create a New Game');
             } elseif ($sub == 'Delete') {
@@ -45,6 +58,488 @@ class SpecialFateGameConfig extends SpecialPage {
                 $this->listAllGames();
             }
         }   
+    }
+    
+    private function saveGameEdits( $game_id, $results ) {
+        $output = $this->getOutput();
+        $game = new FateGame($game_id);
+        $dbw = wfGetDB(DB_MASTER);
+        
+        foreach ($results['delete'] as $type => $data) {
+            foreach ($data as $stat_id => $junk) {
+                if ($type == FateGameGlobals::STAT_MODE) {
+                    $dbw->delete(
+                        'fate_game_mode_skill',
+                        array( 'game_mode_id' => $stat_id )
+                    );
+                    $dbw->delete(
+                        'fate_game_mode',
+                        array( 'game_mode_id' => $stat_id )
+                    );
+                }
+            }
+        }
+        
+        foreach ($results['edit'] as $type => $data) {
+            foreach ($data as $stat_id => $changes) {
+                if ($type == FateGameGlobals::STAT_MODE) {
+                    $cost = $game->modes_by_id[$stat_id]['cost'];
+                    if ($changes['skill']) {
+                        $mod_for_discipline = 0;
+                        $delete_discipline = 0;
+                        foreach ($changes['skill'] as $skill_id => $toggle) {
+                            if ($toggle) {
+                                $cost += $game->skills_by_id[$skill_id]['mode_cost'];
+                                $dbw->insert(
+                                    'fate_game_mode_skill',
+                                    array(
+                                        'game_mode_id' => $stat_id,
+                                        'game_skill_id' => $skill_id
+                                    )
+                                );
+                                if ($game->skills_by_id[$skill_id]['has_disciplines']) {
+                                    $mod_for_discipline = 1;
+                                }
+                            } else {
+                                $cost -= $game->skills_by_id[$skill_id]['mode_cost'];
+                                $dbw->delete(
+                                    'fate_game_mode_skill',
+                                    array(
+                                        'game_mode_id' => $stat_id,
+                                        'game_skill_id' => $skill_id
+                                    )
+                                );
+                                if ($game->skills_by_id[$skill_id]['has_disciplines']) {
+                                    $delete_discipline = 1;
+                                }
+                            }
+                        }
+                        // Confirm whether we're modifying cost for discipline skills (eg Science)
+                        if (!$mod_for_discipline) {
+                            foreach ($game->modes_by_id[$stat_id]['skill_list'] as $skill_id) {
+                                if ($game->skills_by_id[$skill_id]['has_disciplines'] && ! array_key_exists($skill_id, $changes['skill'])) {
+                                    $mod_for_discipline = 1;
+                                    break;
+                                }
+                            }
+                        }
+                        // If we deleted skill that has_disciplines, and didn't have any other skill added or existing with it, then subtract
+                        if ($delete_discipline && !$mod_for_discipline) {
+                            $mod_for_discipline = -1;
+                        }
+                        $cost += $mod_for_discipline;
+                    }
+                    $updates = array();
+                    if ($cost != $game->modes_by_id[$stat_id]['cost']) {
+                        $updates['mode_cost'] = $cost;
+                    }
+                    if (array_key_exists('weird', $changes)) {
+                        $updates['is_weird'] = $changes['weird'];
+                    }
+                    if ($changes['label']) {
+                        $updates['game_mode_label'] = $changes['label'];
+                    }
+                    if (count($updates)) {
+                        $dbw->update(
+                            'fate_game_mode',
+                            $updates,
+                            array( 'game_mode_id' => $stat_id )
+                        );
+                    }
+                }
+            }
+        }
+        
+        foreach($results['new'] as $stat_type => $rows) {
+            foreach ($rows as $row => $data) {
+                if ($row == 'max') {
+                    continue;
+                }
+                $inserts = array(
+                    'game_id' => $game_id,
+                    'game_mode_label' => $data['label'],
+                    'is_weird' => intval($data['weird']),
+                    'mode_cost' => 0
+                );
+                // Go through skills twice. First time: calculate cost
+                $mod_for_discipline = 0;
+                foreach ($data['skill'] as $skill_id => $junk) {
+                    $inserts['mode_cost'] += $game->skills_by_id[$skill_id]['mode_cost'];
+                    if ($game->skills_by_id[$skill_id]['has_disciplines']) {
+                        $mod_for_discipline = 1;
+                    }
+                }
+                $inserts['mode_cost'] += $mod_for_discipline;
+                $dbw->insert(
+                    'fate_game_mode',
+                    $inserts
+                );
+                $mode_id = $dbw->insertId();
+                // Now go through skills to set up connection to new mode
+                foreach ($data['skill'] as $skill_id => $junk) {
+                    $dbw->insert(
+                        'fate_game_mode_skill',
+                        array(
+                            'game_mode_id' => $mode_id,
+                            'game_skill_id' => $skill_id
+                        )
+                    );
+                }
+            }
+        }
+    }
+    
+    private function processEditGameForm() {
+        $request = $this->getRequest();
+        $data = $request->getValues();
+        $game_id = $request->getInt('game_id');
+        $game = new FateGame($game_id);
+        
+        $output = $this->getOutput();
+        
+        $results = array(
+            'delete' => array(),
+            'edit' => array(),
+            'new' => array(),
+            'error' => array(),
+            'form' => $data
+        );
+        
+        // Start by hunting deletes
+        foreach ($data as $key => $value) {
+            if (preg_match("/^(\d+)_delete_(\d+)$/", $key, $matches)) {
+                $results['delete'][$matches[1]][$matches[2]] = 1;
+            }
+        }
+        
+        // Now look for edits
+        foreach ($data as $key => $value) {
+            if (preg_match("/^(\d+)_skill_(\d+)_(?!new_)(\d+)$/", $key, $matches)) {
+                $type = $matches[1];
+                $field = 'skill';
+                $skill_id = $matches[2];
+                $mode_id = $matches[3];
+                
+                if ($results['delete'][$type][$mode_id]) {
+                    continue;
+                }
+                
+                if (in_array($skill_id, $game->modes_by_id[$mode_id]['skill_list']) && $value) {
+                    continue;
+                }
+                
+                $results['edit'][$type][$mode_id][$field][$skill_id] = $value;
+            } elseif (preg_match("/^(\d+)_([a-zA-Z]+)_(?!new_)(\d+)$/", $key, $matches)) {
+                $type = $matches[1];
+                $field = $matches[2];
+                $id = $matches[3];
+                
+                // Skip if we're already deleting
+                if ($results['delete'][$type][$id]) {
+                    continue;
+                }
+                
+                if ($type == FateGameGlobals::STAT_MODE) {
+                    if ($field == 'label' && $game->modes_by_id[$id]['label'] == $value) {
+                        continue;
+                    } elseif ($field == 'weird' && $game->modes_by_id[$id]['is_weird'] == $value) {
+                        continue;
+                    }
+                }
+                
+                $results['edit'][$type][$id][$field] = $value;
+            }
+        }
+        
+        // Go through modes, look for things we may have turned off
+        foreach ($game->modes as $mode) {
+            if ($mode['is_weird'] && !$data[FateGameGlobals::STAT_MODE . "_weird_" . $mode['mode_id']]) {
+                $results['edit'][FateGameGlobals::STAT_MODE][$mode['mode_id']]['weird'] = 0;
+            }
+            foreach ($mode['skill_list'] as $skill_id) {
+                if (!$data[FateGameGlobals::STAT_MODE . "_skill_" . $skill_id . "_" . $mode['mode_id']]) {
+                    $results['edit'][FateGameGlobals::STAT_MODE][$mode['mode_id']]['skill'][$skill_id]  = 0;
+                }
+            }
+        }
+        
+        
+        // Finally, look for new info
+        foreach ($data as $key => $value) {
+            if (preg_match("/^(\d+)_skill_(\d+)_new_(\d+)$/", $key, $matches)) {
+                $type = $matches[1];
+                $field = 'skill';
+                $skill_id = $matches[2];
+                $grouping = $matches[3];
+                
+                $results['new'][$type][$grouping][$field][$skill_id] = $value;
+                if ($results['new'][$type]['max'] < $grouping) {
+                    $results['new'][$type]['max'] = $grouping;
+                }
+            } elseif (preg_match("/^(\d+)_([a-zA-Z]+)_new_(\d+)$/", $key, $matches)) {
+                $type = $matches[1];
+                $field = $matches[2];
+                $grouping = $matches[3];
+                
+                $results['new'][$type][$grouping][$field] = $value;
+                if ($results['new'][$type]['max'] < $grouping) {
+                    $results['new'][$type]['max'] = $grouping;
+                }
+            }
+        }
+        foreach ($results['new'] as $type => $rows) {
+            foreach ($rows as $row_index => $row) {
+                if ($row_index == 'max') {
+                    continue;
+                }
+                
+                if ($type == FateGameGlobals::STAT_MODE && !$row['label']) {
+                    unset($results['new'][$type][$row_index]);
+                }
+            }
+        }
+        
+        return $results;
+    }
+
+    private function editGame( $results = array() ) {
+        $user = $this->getUser();
+        $output = $this->getOutput();
+        $request = $this->getRequest();
+        
+        $game_id = $request->getInt('game_id');
+        $table = '';
+        if ($game_id) {
+            $game = new FateGame($game_id);
+            if ($game->register_id) {
+                $table .= Linker::link($this->getPageTitle()->getSubPage('View'), 'Return to View', array(), array( 'game_id' => $game_id ), array( 'forcearticlepath' ) );
+                $table .= $this->getEditGameForm($game, $results);
+            } else {
+                $table .= "<div class='error' style='font-weight: bold; color: red;'>No data found for that game_id; please check URL and try again.</div>";
+            }
+        } else {
+            $table .= "<div class='error' style='font-weight: bold; color: red'>Missing game_id argument; don't know which game to show.</div>";
+        }
+        $output->addHTML($table);
+    }   
+    
+    private function getEditGameForm( $game, $results ) {
+        $user = $this->getUser();
+        $output = $this->getOutput();
+        $request = $this->getRequest();
+        
+        $form_url = $this->getPageTitle()->getSubPage('Edit')->getLinkURL();
+        $game_id = $game->game_id;
+        $skill_list = $this->getGameSkillsJS( $game );
+        $const = FateGameGlobals::getStatConsts();
+        
+        $form .= <<<EOT
+            <script type='text/javascript'>
+                $skill_list
+                var TYPE_MODE = {$const['mode']};
+                
+                function addNewModeSection( id ) {
+                    var check = document.getElementById('eg' + TYPE_MODE + '_label_new_' + (parseInt(id) + 1));
+                    if (!check) {
+                        var new_id = parseInt(id) + 1;
+                        var body = document.getElementById('config_modes');
+                        var row = document.createElement('tr');
+                        var cell = document.createElement('td');
+                        cell.className = 'mw-label';
+                        var name = TYPE_MODE + '_label_new_' + new_id;
+                        var label = document.createElement('label');
+                        label.setAttribute('for', 'eg' + name);
+                        label.appendChild(document.createTextNode('New Mode Name:'));
+                        cell.appendChild(label);
+                        row.appendChild(cell);
+                        cell = document.createElement('td');
+                        cell.className = 'mw-input';
+                        var input = document.createElement('input');
+                        input.setAttribute('name', name);
+                        input.setAttribute('id', 'eg' + name);
+                        input.setAttribute('type', 'text');
+                        input.setAttribute('size', 35);
+                        input.setAttribute('oninput', 'addNewModeSection(' + new_id + ');');
+                        cell.appendChild(input);
+                        row.appendChild(cell);
+                        cell = document.createElement('td');
+                        cell.className = 'mw-label';
+                        name = TYPE_MODE + '_weird_new_' + new_id;
+                        label = document.createElement('label');
+                        label.setAttribute('for', 'eg' + name);
+                        label.appendChild(document.createTextNode('Is Weird?'));
+                        cell.appendChild(label);
+                        row.appendChild(cell);
+                        cell = document.createElement('td');
+                        cell.className = 'mw-input';
+                        input = document.createElement('input');
+                        input.setAttribute('name', name);
+                        input.setAttribute('id', 'eg' + name);
+                        input.setAttribute('type', 'checkbox');
+                        input.setAttribute('value', 1);
+                        input.setAttribute('onchange', 'addNewModeSection(' + new_id + ');');
+                        cell.appendChild(input);
+                        row.appendChild(cell);
+                        cell = document.createElement('td');
+                        row.appendChild(cell);
+                        cell = document.createElement('td');
+                        row.appendChild(cell);
+                        body.appendChild(row);
+                        row = document.createElement('tr');
+                        cell = document.createElement('td');
+                        cell.colSpan = 6;
+                        var skillTable = document.createElement('table');
+                        var skillBody = document.createElement('tbody');
+                        var skillRow;
+                        var append;
+                        for (var i = 0; i < skill_list.length; i++) {
+                            if (i % 5 == 0) {
+                                skillRow = document.createElement('tr');
+                                append = 1;
+                            }
+                            var skillCell = document.createElement('td');
+                            skillCell.className = 'mw-label';
+                            var skillName = TYPE_MODE + '_skill_' + skill_list[i].id + '_new_ ' + new_id;
+                            var skillLabel = document.createElement('label');
+                            skillLabel.setAttribute('for', 'eg' + skillName);
+                            skillLabel.appendChild(document.createTextNode(skill_list[i].label + ' (' + skill_list[i].mode_cost + ')'));
+                            skillCell.appendChild(skillLabel);
+                            skillRow.appendChild(skillCell);
+                            skillCell = document.createElement('td');
+                            skillCell.className = 'mw-input';
+                            var skillInput = document.createElement('input');
+                            skillInput.setAttribute('name', skillName);
+                            skillInput.setAttribute('id', 'eg' + skillName);
+                            skillInput.setAttribute('type', 'checkbox');
+                            skillInput.setAttribute('value', 1);
+                            skillInput.setAttribute('onchange', 'addNewModeSection(' + new_id + ');');
+                            skillCell.appendChild(skillInput);
+                            skillRow.appendChild(skillCell);
+                            if (i % 5 == 4) {
+                                skillBody.appendChild(skillRow);
+                                append = 0;
+                            }
+                        }
+                        if (append) {
+                            skillBody.appendChild(skillRow);
+                        }
+                        skillTable.appendChild(skillBody);
+                        cell.appendChild(skillTable);
+                        row.appendChild(cell);
+                        body.appendChild(row);
+                    }
+                }
+            </script>
+            <form action='$form_url' method='post'>
+                <input type='hidden' name='game_id' value='$game_id'/>
+                <input type='hidden' name='action' value='edit'/>
+                <h2>Edit Game</h2>
+EOT;
+
+        // Did we have errors? If show, display a big warning here
+        if (count($results['error']) > 0) {
+            $form .= "<div class='errorbox'><strong>Editing error.</strong><br/>One or more error was found. Please correct them below, and resubmit to save edits.</div>";
+        }
+        
+        $form .= <<<EOT
+            <fieldset>
+                <legend>Basic Attributes</legend>
+                <table>
+                    <tbody>
+                    <tr>
+                        <td class='mw-label'><label for='egname'>Game Name:</label></td>
+                        <td class='mw-input'><input id='egname' name='game_name' value='$game->game_name' type='text' size='35'/></td>
+                    </tr>
+                    </tbody>
+                </table>
+            </fieldset>
+EOT;
+        
+        $form .= "<fieldset><legend>Configure Modes</legend><table><tbody id='config_modes'>";
+        foreach ($game->modes as $mode) {
+            $form .= $this->getEditModeSection($game, $mode, $results);
+        }
+        // TODO: Add counting!
+        $form .= $this->getEditModeSection($game, array( 'newrow' => 1 ), $results);
+        $form .= "</tbody></table></fieldset>";
+        
+        $form .= "<span class='mw-htmlform-submit-buttons'><input class='mw-htmlform-submit' type='submit' value='Update'/></span></form>";
+        
+        return $form;
+    }
+    
+    private function getGameSkillsJS( $game ) {
+        $js = "var skill_list = new Array();";
+        foreach ($game->skills as $skill) {
+            $js .= "skill_list.push( { id: " . $skill['skill_id'] . ", mode_cost: " . $skill['mode_cost'] . ", label: '" . $skill['label'] . "' } );";
+        }
+        return $js;
+    }
+    
+    private function getEditModeSection( $game, $mode, $results ) {
+        $new_label = ($mode['mode_id'] ? '' : 'New ');
+        $id_suffix = ($mode['mode_id'] ? $mode['mode_id'] : 'new_' . $mode['newrow']);
+        $onchange = '';
+        $oninput = '';
+        $delete_cells = '';
+        $modetype = FateGameGlobals::STAT_MODE;
+        if (!$mode['mode_id']) {
+            $onchange = "onchange='addNewModeSection(" . $mode['newrow'] . ");'";
+            $oninput = "oninput='addNewModeSection(" . $mode['newrow'] . ");'";
+            $delete_cells = "<td></td><td></td>"; 
+        } else {
+            $delete_cells = "<td class='mw-label'><label for='eg{$modetype}_delete_$id_suffix'>Delete:</label></td>".
+                            "<td class='mw-input'><input type='checkbox' id='eg{$modetype}_delete_$id_suffix' name='{$modetype}_delete_$id_suffix' value='1'/></td>";
+        }     
+        $checked = ($mode['is_weird'] ? 'checked' : '');
+        $mode_label = $mode['label'];
+        $form = <<<EOT
+            <tr>
+                <td class='mw-label'><label for='eg{$modetype}_label_$id_suffix'>$new_label Mode Name:</label></td>
+                <td class='mw-input'><input name='{$modetype}_label_$id_suffix' id='eg{$modetype}_label_$id_suffix' type='text' size='35' $oninput value='$mode_label'/></td>
+                <td class='mw-label'><label for='eg{$modetype}_weird_$id_suffix'>Is Weird?</label></td>
+                <td class='mw-input'><input type='checkbox' id='eg{$modetype}_weird_$id_suffix' name='{$modetype}_weird_$id_suffix' value='1' $onchange $checked/></td>
+                $delete_cells
+            </tr>
+            <tr>
+                <td colspan=6>
+                <table>
+                    <tbody>
+EOT;
+    
+        $columns = 5;
+        $count = 0;
+        $close = 0;
+        if (count($game->skills) == 0) {
+            $form .= "<tr><td>No Skills yet defined; please add them before configuring modes.</td></tr>";
+        } else {    
+            foreach ($game->skills as $skill) {
+                if ($count++ % $columns == 0) {
+                    $form .= "<tr>";
+                    $close = 1;
+                }
+                $name = $modetype . "_skill_" . $skill['skill_id'] . "_$id_suffix";
+                $checked = ($mode['skill_list'] && in_array($skill['skill_id'], $mode['skill_list']) ? 'checked' : '');
+                $form .= "<td class='mw-label'><label for='eg$name'>" . $skill['label'] . " (" . $skill['mode_cost'] . ")</label></td>".
+                         "<td class='mw-input'><input type='checkbox' id='eg$name' name='$name' value='1' $checked $onchange/></td>";
+                if ($count % $columns == 0) {
+                    $form .= "</tr>";
+                    $close = 0;
+                }
+            }
+        }
+        if ($close) {
+            $form .= "</tr>";
+        }
+        
+        $form .= <<<EOT
+                    </tbody>
+                </table>
+                </td>
+            </tr>
+EOT;
+    
+        return $form;
     }
     
     private function viewSpecificGame() {
@@ -58,6 +553,7 @@ class SpecialFateGameConfig extends SpecialPage {
             $table = '';
             if ($game->register_id) {
                 $distribution = FateGameGlobals::getSkillDistributionArray();
+                $table .= Linker::link($this->getPageTitle()->getSubPage('Edit'), 'Edit', array(), array( 'game_id' => $game_id ), array( 'forcearticlepath' ) );
                 $table .= "<table>".
                           "<tr><td class='mw-label'>Game Name:</td><td colspan=3>$game->game_name</td></tr>".
                           "<tr><td class='mw-label' style='vertical-align: top'>Description:</td><td colspan=3>$game->game_description</td></tr>".
@@ -94,7 +590,7 @@ class SpecialFateGameConfig extends SpecialPage {
                 }
                 if (count($game->modes) > 0) {
                     $table .= "<tr><td class='mw-label' style='vertical-align: top'>Defined Modes:</td><td colspan=3>".
-                              "<table border=1><tr><th>Mode Name</th><th>Cost</th><th>Is Weird?</th><th>Associated Skills</th></tr>";
+                              "<table class='wikitable'><tr><th>Mode Name</th><th>Cost</th><th>Is Weird?</th><th>Associated Skills</th></tr>";
                     foreach ($game->modes as $mode) {
                         $skill_list = array();
                         foreach ($mode['skill_list'] as $sk) {
@@ -138,7 +634,7 @@ class SpecialFateGameConfig extends SpecialPage {
                     /* Handle Characters first, if they exist */
                     if (count($game->fractals['Character']) > 0) {
                         $characters = $game->fractals['Character'];
-                        $table .= "<table border=1 cellspacing=3 cellpadding=2><caption>Characters<caption>".
+                        $table .= "<table class='wikitable'><caption>Characters<caption>".
                                   "<tr><th>Character Name</th><th>Wiki Name</th><th>Status</th></tr>";
                         foreach ($characters as $character) {
                             $table .= "<tr><td>" . 
@@ -164,7 +660,7 @@ class SpecialFateGameConfig extends SpecialPage {
                         if ($key == 'Character') {
                             continue;
                         }
-                        $table .= "<table border=1 cellspacing=3 cellpadding=2><caption>$key</caption>".
+                        $table .= "<table class='wikitable'><caption>$key</caption>".
                                   "<tr><th>Name</th><th>Is Private?</th><th>Created On</th>";
                         foreach ($array as $fractal) {
                             $table .= "<tr><td>" .
@@ -174,7 +670,8 @@ class SpecialFateGameConfig extends SpecialPage {
                         }
                         $table .= "</table>";
                     }
-                }  
+                }
+                $table .= Linker::link(Title::newFromText('Special:FateStats')->getSubpage("Create"), 'Create New Fractal', array(), array( 'game_id' => $game_id ), array ( 'forcearticlepath' ) );
             } else {
                 $table .= "<div class='error' style='font-weight: bold; color: red'>No data found for that game_id; please check URL and try again.</div>";
             }
@@ -212,7 +709,7 @@ class SpecialFateGameConfig extends SpecialPage {
         if ($games->numRows() == 0) {
             $table .= "<div>No games are currently set up.</div>";
         } else {
-            $table .= "<table border=1 cellspacing=3 cellpadding=3>".
+            $table .= "<table class='wikitable' >".
                       "<tr><th>Game Name</th><th>Game Master</th><th>Description</th><th>Status</th><th>Created</th><th>Last Modified</th></tr>";
             foreach ($games as $game) {
                 $table .= "<tr><td valign='top'>";
