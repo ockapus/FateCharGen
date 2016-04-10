@@ -276,7 +276,11 @@ class SpecialFateStats extends SpecialPage {
                 }
                 
                 // If we're here, we found a change; save it to make an update
-                $results['edit'][$stat_id][$field] = $value;
+                if ($stat_type == FateGameGlobals::STAT_SKILL && $field == 'label') {
+                    $results['edit'][$stat_id][$field] = $fractal->fate_game->skills_by_id[$value]['label'];
+                } else {
+                    $results['edit'][$stat_id][$field] = $value;
+                }
             }
         }
         
@@ -286,7 +290,11 @@ class SpecialFateStats extends SpecialPage {
                 $stat_type = $matches[1];
                 $field = $matches[2];
                 $grouping = $matches[3];
-                $results['new'][$stat_type][$grouping][$field] = $value;
+                if ($stat_type == FateGameGlobals::STAT_SKILL && $field == 'label') {
+                        $results['new'][$stat_type][$grouping][$field] = $fractal->fate_game->skills_by_id[$value]['label'];
+                } else {
+                    $results['new'][$stat_type][$grouping][$field] = $value;
+                }
                 // Record how many dynamically created rows we had, so we can recreate them all
                 if ($results['new'][$stat_type]['max'] < $grouping) {
                     $results['new'][$stat_type]['max'] = $grouping;
