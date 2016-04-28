@@ -85,17 +85,20 @@ class FateGame {
                 '*',
                 array( 'game_id' => $game_id ),
                 __METHOD__,
-                array( 'ORDER BY' => 'game_aspect_ordinal' )
+                array( 'ORDER BY' => 'game_aspect_label' )
             );
             $this->aspects = array();
+            $this->aspects_by_id = array();
             if ($aspect_list->numRows() > 0) {
                 foreach ($aspect_list as $aspect) {
                     $asp = array(
+                        'aspect_id' => $aspect->{game_aspect_id},
                         'label' => $aspect->{game_aspect_label},
-                        'ordinal' => $aspect->{game_aspect_ordinal},
-                        'is_shared' => ((bool) $aspect->{is_shared})
+                        'is_shared' => ((bool) $aspect->{is_shared}),
+                        'is_major' => ((bool) $aspect->{is_major})
                     );
                     $this->aspects[] = $asp;
+                    $this->aspects_by_id[$aspect->{game_aspect_id}] = $asp;
                 }
             }
             
@@ -114,8 +117,7 @@ class FateGame {
                         'skill_id' => $skill->{game_skill_id},
                         'label' => $skill->{game_skill_label},
                         'mode_cost' => $skill->{mode_cost},
-                        'has_disciplines' => ((bool) $skill->{has_disciplines}),
-                        'only_disciplines' => ((bool) $skill->{only_disciplines})
+                        'has_disciplines' => ((bool) $skill->{has_disciplines})
                     );
                     $this->skills[] = $sk;
                     $this->skills_by_id[$sk['skill_id']] = $sk;
@@ -194,7 +196,8 @@ class FateGame {
             
             $fractal_list = $dbr->select(
                 array( 'f' => 'fate_fractal',
-                       'r' => 'muxregister_register' ),
+                       'r' => 'muxregister_register',
+                       'p' => 'fate_pending_stat' ),
                 array( 'r.user_name',
                        'r.canon_name',
                        'r.user_id',
@@ -205,13 +208,16 @@ class FateGame {
                        'f.create_date',
                        'f.submit_date',
                        'f.approve_date',
-                       'f.frozen_date' ),
+                       'f.frozen_date',
+                       'pending' => 'count(p.pending_stat_id)' ),
                 array( 'f.game_id' => $game_id ),
                 __METHOD__,
                 array( 'ORDER BY' => array ('fractal_type', 'fractal_name', 'canon_name' ) ),
-                array( 'r' => array( 'LEFT JOIN', 'f.register_id = r.register_id' ) )
+                array( 'r' => array( 'LEFT JOIN', 'f.register_id = r.register_id' ),
+                       'p' => array( 'LEFT JOIN', 'f.fractal_id = p.fractal_id' ) )
             );
             $this->fractals = array();
+            $this->pending_stat_approvals = 0;
             if ($fractal_list->numRows() > 0) {
                 foreach ($fractal_list as $fractal) {
                     $frac = array( 
@@ -222,12 +228,16 @@ class FateGame {
                         'create_date' => $fractal->{create_date},
                         'submit_date' => $fractal->{submit_date},
                         'approve_date' => $fractal->{approve_date},
-                        'frozen_date' => $fractal->{frozen_date}
+                        'frozen_date' => $fractal->{frozen_date},
+                        'pending' => $fractal->{pending}
                     );
                     if (! is_array($this->fractals[$fractal->{fractal_type}])) {
                         $this->fractals[$fractal->{fractal_type}] = array();
                     }
                     $this->fractals[$fractal->{fractal_type}][] = $frac;
+                    if ($fractal->{pending}) {
+                        $this->pending_stat_approvals = 1;
+                    }
                 }
             }
         }

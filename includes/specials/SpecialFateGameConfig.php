@@ -49,6 +49,18 @@ class SpecialFateGameConfig extends SpecialPage {
                 } else {
                     $this->editGame();
                 }
+            } elseif ($sub == 'Approval') {
+                if ($action == 'edit') {
+                    $results = $this->processApprovalForm();
+                    if (count($results['error']) == 0) {
+                        $this->saveApprovals($game_id, $results);
+                        $this->viewSpecificGame();
+                    } else {
+                        $this->viewPendingApprovals($results);
+                    }
+                } else {
+                    $this->viewPendingApprovals();
+                }
             } elseif ($sub == 'Create') {
                 $out->addWikiText('* Create a New Game');
             } elseif ($sub == 'Delete') {
@@ -301,7 +313,124 @@ class SpecialFateGameConfig extends SpecialPage {
         
         return $results;
     }
+    
+    private function processApprovalForm() {
+        $request = $this->getRequest();
+        $data = $request->getValues();
+        $game_id = $request->getInt('game_id');
+        $game = new FateGame($game_id);
+        
+        $output = $this->getOutput();
+        
+        $results = array(
+            'approve' => array(),
+            'deny' => array(),
+            'error' => array(),
+            'form' => $data
+        );
+        
+        foreach ($data as $key => $value) {
+            if (preg_match("/^approve_(\d+)_(\d+)$/", $key, $matches)) {
+                $results['approve'][$matches[1]][$matches[2]] = 1;
+                
+            } elseif (preg_match("/deny_(\d+)_(\d+)$/", $key, $matches)) {
+                if ($data['reason_' . $matches[1] . '_' . $matches[2]]) {
+                    $results['deny'][$matches[1]][$matches[2]] = $data['reason_' . $matches[1] . '_' . $matches[2]];
+                } else {
+                    $results['error'][$matches[1]][$matches[2]] = 1;
+                }
+            }
+        }
+        
+        return $results;
+    }
 
+    private function saveApprovals( $game_id, $results ) {
+        $output = $this->getOutput();
+        $user = $this->getUser();
+        $game = new FateGame($game_id);
+        $dbw = wfGetDB(DB_MASTER);
+        
+        foreach ($results['deny'] as $fractal_id => $data) {
+            foreach ($data as $pending_id => $reason) {
+                $updates = array(
+                    'denied_reason' => $reason,
+                    'denied_id' => $user->getId(),
+                    'modified_date' => $dbw->timestamp()
+                );
+                $dbw->update(
+                    'fate_pending_stat',
+                    $updates,
+                    array( 'pending_stat_id' => $pending_id )
+                );
+            }
+        }
+        
+        foreach ($results['approve'] as $fractal_id => $data) {
+            foreach ($data as $pending_id => $flag) {
+                $fractal = new FateFractal($fractal_id);
+                $updates = array( 'modified_date' => $dbw->timestamp() );
+                if ($fractal->pending_stats_by_id[$pending_id]->{original_stat_id}) {
+                    if ($fractal->pending_stats_by_id[$pending_id]->{stat_type} == FateGameGlobals::STAT_ASPECT) {
+                        $updates['stat_field'] = $fractal->pending_stats_by_id[$pending_id]->{stat_field};
+                    } elseif ($fractal->pending_stats_by_id[$pending_id]->{stat_type} == FateGameGlobals::STAT_STUNT) {
+                        $updates['stat_field'] = $fractal->pending_stats_by_id[$pending_id]->{stat_field};
+                        $updates['stat_description'] = $fractal->pending_stats_by_id[$pending_id]->{stat_description};
+                    }
+                    $dbw->update(
+                        'fate_fractal_stat',
+                        $updates,
+                        array( 'fractal_stat_id' => $fractal->pending_stats_by_id[$pending_id]->{original_stat_id} )
+                    );
+                } else {
+                    // Save new stat
+                    $updates['fractal_id'] = $fractal_id;
+                    $updates['stat_type'] = $fractal->pending_stats_by_id[$pending_id]->{stat_type};
+                    $updates['stat_field'] = $fractal->pending_stats_by_id[$pending_id]->{stat_field};
+                    if ($fractal->pending_stats_by_id[$pending_id]->{parent_id}) {
+                        $updates['parent_id'] = $fractal->pending_stats_by_id[$pending_id]->{parent_id};
+                    }
+                    if ($fractal->pending_stats_by_id[$pending_id]->{stat_type} == FateGameGlobals::STAT_ASPECT) {
+                        if ($fractal->pending_stats_by_id[$pending_id]->{stat_label}) {
+                            $updates['stat_label'] = $fractal->pending_stats_by_id[$pending_id]->{stat_label};
+                        }
+                    } elseif ($fractal->pending_stats_by_id[$pending_id]->{stat_type} == FateGameGlobals::STAT_STUNT) {
+                        $updates['stat_description'] = $fractal->pending_stats_by_id[$pending_id]->{stat_description};
+                    }
+                    $dbw->insert(
+                        'fate_fractal_stat',
+                        $updates
+                    );
+                }
+                $dbw->delete(
+                    'fate_pending_stat',
+                    array( 'pending_stat_id' => $pending_id )
+                );
+            }
+        }           
+    }
+    
+    private function viewPendingApprovals( $results = array() ) {
+        $user = $this->getUser();
+        $output = $this->getOutput();
+        $request = $this->getRequest();
+        
+        $game_id = $request->getInt('game_id');
+        $table = '';
+        if ($game_id) {
+            $game = new FateGame($game_id);
+            if ($game->register_id) {
+                $table .= Linker::link($this->getPageTitle()->getSubPage('View'), 'Return to View', array(), array( 'game_id' => $game_id ), array( 'forcearticlepath' ) );
+                $table .= $this->getApproveForm($game, $results);
+            } else {
+                $table .= "<div class='error' style='font-weight: bold; color: red;'>No data found for that game_id; please check URL and try again.</div>";
+            }
+        } else {
+            $table .= "<div class='error' style='font-weight: bold; color: red'>Missing game_id argument; don't know which game to show.</div>";
+        }
+        $output->addHTML($table);
+    }   
+                 
     private function editGame( $results = array() ) {
         $user = $this->getUser();
         $output = $this->getOutput();
@@ -321,7 +450,159 @@ class SpecialFateGameConfig extends SpecialPage {
             $table .= "<div class='error' style='font-weight: bold; color: red'>Missing game_id argument; don't know which game to show.</div>";
         }
         $output->addHTML($table);
-    }   
+    }
+    
+    private function getApproveForm( $game, $results ) {
+        $user = $this->getUser();
+        $output = $this->getOutput();
+        $request = $this->getRequest();
+        
+        $form_url = $this->getPageTitle()->getSubPage('Approval')->getLinkURL();
+        $game_id = $game->game_id;
+        
+        $form = '<h2>Process Approvals for: ' . $game->game_name . '</h2>';
+        if ($game->pending_stat_approvals) {
+            $form .= <<<EOT
+                <script type='text/javascript'>
+                    function toggle_check(id, check) {
+                        var approve = document.getElementById('approve_' + id);
+                        var deny = document.getElementById('deny_' + id);
+                        if (check == approve) {
+                            deny.checked = false;
+                        } else {
+                            approve.checked = false;
+                        }
+                    }
+                </script>
+                <form action='$form_url' method='post'>
+                <input type='hidden' name='game_id' value='$game_id'/>
+                <input type='hidden' name='action' value='edit'/>
+EOT;
+
+            // Did we have errors? If show, display a big warning here
+            if (count($results['error']) > 0) {
+                $form .= "<div class='errorbox'><strong>Approval error.</strong><br/>One or more error was found. Please correct them below, and resubmit to save approvals.</div>";
+            }
+            
+            // TODO: Check for characters that need to be approved
+            
+            // Now look for individual stats that need approval
+            if ($game->pending_stat_approvals) {
+                $form .= "<fieldset><legend>Pending Stats</legend><table width='100%'><tbody>";
+                foreach ($game->fractals['Character'] as $f) {
+                    if ($f['pending']) {
+                        $fractal = new FateFractal($f['fractal_id']);
+                        $form .= "<tr><td>" . $fractal->getFractalBlock(1);
+                        if (array_key_exists(FateGameGlobals::STAT_ASPECT, $fractal->pending_stats)) {
+                            foreach ($fractal->pending_stats[FateGameGlobals::STAT_ASPECT] as $aspect) {
+                                $form .= $this->getApproveAspect($aspect, $fractal->stats_by_id[$aspect->{original_stat_id}], $results);
+                            }
+                        }
+                        if (array_key_exists(FateGameGlobals::STAT_STUNT, $fractal->pending_stats)) {
+                            foreach ($fractal->pending_stats[FateGameGlobals::STAT_STUNT] as $stunt) {
+                                $form .= $this->getApproveStunt($stunt, $fractal->stats_by_id[$stunt->{original_stat_id}], $results);
+                            }
+                        }
+                        $form .= "</td></tr>";
+                    }
+                }       
+                $form .= "</tbody></table></fieldset>";   
+            }
+            $form .= "<span class='mw-htmlform-submit-buttons'><input class='mw-htmlform-submit' type='submit' value='Update'/></span></form>";
+        } else {
+            $form .= "<div class='error' style='font-weight: bold; color: red;'>No pending approvals found for this game.</div>";
+        }
+        
+        return $form;
+    }
+    
+    private function getApproveStunt( $pending, $original, $results ) {
+        $label = ($original ? 'Update' : 'New') . " Stunt:";
+        $fields = '';
+        if ($pending->{denied_reason}) {
+            $fields = $this->getDenial($pending);
+        } else {
+            $fields = $this->getApproveFields($pending->{fractal_id}, $pending->{pending_stat_id}, $results);
+        }
+        $orig = '';
+        if ($original) {
+            $orig = "<tr><td class='mw-label'>Originally:</td><td class='mw-input'>" . $original->{stat_field} . "</td></tr>".
+                    "<tr><td>&nbsp;</td><td class='mw-input'><em>" . $original->{stat_description} . "</em></td></tr>";
+        }
+        $form = <<<EOT
+            <table>
+                <tbody>
+                <tr>
+                    <td class='mw-label'>$label</td>
+                    <td class='mw-input'>{$pending->{stat_field}}</td>
+                </tr>
+                <tr>
+                    <td>&nbsp;</td>
+                    <td class='mw-input'><em>{$pending->{stat_description}}</em></td>
+                </tr>
+                $orig
+                $fields
+                </tbody>
+            </table>
+EOT;
+        return $form;
+    }
+    
+    private function getApproveAspect( $pending, $original, $results ) {
+        $label = ($original ? 'Rename' : 'New') . ($pending->{stat_label} ? ' ' . $pending->{stat_label} : '') . " Aspect:";
+        $fields = '';
+        if ($pending->{denied_reason}) {
+            $fields = $this->getDenial($pending);
+        } else {
+            $fields = $this->getApproveFields($pending->{fractal_id}, $pending->{pending_stat_id}, $results);
+        }
+        $orig = '';
+        if ($original) {
+            $orig = "<tr><td class='mw-label'>Originally:</td><td class='mw-input'>" . $original->{stat_field} . "</td</tr>";
+        }
+        $form = <<<EOT
+            <table>
+                <tbody>
+                <tr>
+                    <td class='mw-label'>$label</td>
+                    <td class='mw-input'>{$pending->{stat_field}}</td>
+                </tr>
+                $orig
+                $fields
+                </tbody>
+            </table>
+EOT;
+        return $form;
+    }
+    
+    private function getApproveFields( $fractal_id, $pending_stat_id, $results ) {
+        $id = $fractal_id . '_' . $pending_stat_id;
+        $checked = ($results['form']["deny_$id"] ? 'checked' : '');
+        $error = ($results['error'][$fractal_id][$pending_stat_id] ? "class='formerror'" : '');
+        $fields = <<<EOT
+            <tr>
+                <td class='mw-label'>Approve:</td>
+                <td class='mw-input'><input type='checkbox' value='1' name='approve_$id' id='approve_$id' onchange='toggle_check("$id", this);'/></td>
+            </tr>
+            <tr>
+                <td class='mw-label'>Deny:</td>
+                <td class='mw-input'><input type='checkbox' value='1' name='deny_$id' id='deny_$id' $checked onchange='toggle_check("$id", this);'/></td>
+            </tr>
+            <tr>
+                <td class='mw-label' style='vertical-align: top'>Reason Denied:</td>
+                <td class='mw-input'><textarea name='reason_$id' rows=3 cols=80 $error></textarea></td>
+            </tr>
+EOT;
+        if ($results['error'][$fractal_id][$pending_stat_id]) {
+            $fields .= "<tr><td>&nbsp;</td><td class='error'>Reason Required for Denials.</td></tr>";
+        }
+        return $fields;
+    }
+    
+    private function getDenial( $pending ) {
+        $denial = "<tr><td>&nbsp;</td><td><strong>Denied on " . FateGameGlobals::getDisplayDate($pending->{modified_date}) . ":</strong> " . $pending->{denied_reason} . "</td></tr>";
+        return $denial;
+    }
     
     private function getEditGameForm( $game, $results ) {
         $user = $this->getUser();
@@ -455,13 +736,15 @@ EOT;
             </fieldset>
 EOT;
         
-        $form .= "<fieldset><legend>Configure Modes</legend><table><tbody id='config_modes'>";
-        foreach ($game->modes as $mode) {
-            $form .= $this->getEditModeSection($game, $mode, $results);
+        if ($game->skill_distribution == FateGameGlobals::SKILL_DISTRIBUTION_MODES) {
+            $form .= "<fieldset><legend>Configure Modes</legend><table><tbody id='config_modes'>";
+            foreach ($game->modes as $mode) {
+                $form .= $this->getEditModeSection($game, $mode, $results);
+            }
+            // TODO: Add counting!
+            $form .= $this->getEditModeSection($game, array( 'newrow' => 1 ), $results);
+            $form .= "</tbody></table></fieldset>";
         }
-        // TODO: Add counting!
-        $form .= $this->getEditModeSection($game, array( 'newrow' => 1 ), $results);
-        $form .= "</tbody></table></fieldset>";
         
         $form .= "<span class='mw-htmlform-submit-buttons'><input class='mw-htmlform-submit' type='submit' value='Update'/></span></form>";
         
@@ -568,7 +851,7 @@ EOT;
                     $table .= "<br/>";
                     $list = array();
                     foreach ($game->aspects as $aspect) {
-                        $list[] = $aspect['label'];
+                        $list[] = $aspect['label'] . ($aspect['is_major'] ? ' (*)' : '');
                     }
                     $table .= implode(', ', $list);
                 }
@@ -672,6 +955,9 @@ EOT;
                     }
                 }
                 $table .= Linker::link(Title::newFromText('Special:FateStats')->getSubpage("Create"), 'Create New Fractal', array(), array( 'game_id' => $game_id ), array ( 'forcearticlepath' ) );
+                if ($game->pending_stat_approvals) {
+                    $table .= "<br/>" . Linker::link($this->getPageTitle()->getSubPage('Approval'), 'You have pending approvals', array(), array( 'game_id' => $game_id ), array( 'forcearticlepath' ) );
+                }
             } else {
                 $table .= "<div class='error' style='font-weight: bold; color: red'>No data found for that game_id; please check URL and try again.</div>";
             }

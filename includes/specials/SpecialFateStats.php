@@ -15,10 +15,9 @@ class SpecialFateStats extends SpecialPage {
         FateGameGlobals::STAT_ASPECT => array(
             'fields' => array(
                 'label' => array( 'label' => 'Label (Optional)', 'size' => 35 ),
-                'field' => array( 'label' => 'Aspect', 'size' => 35 ),
-                'ordinal' => array( 'label' => 'Order', 'size' => 1 ) 
+                'field' => array( 'label' => 'Aspect', 'size' => 35 )
             ),
-            'required' => array( 'field', 'ordinal' ),
+            'required' => array( 'field' ),
             'unique' => 0
         ),
         FateGameGlobals::STAT_MODE => array(
@@ -41,10 +40,9 @@ class SpecialFateStats extends SpecialPage {
         FateGameGlobals::STAT_STUNT => array(
             'fields' => array(
                 'field' => array( 'label' => 'Title', 'size' => 35 ),
-                'description' => array( 'label' => 'Description', 'type' => 'textarea', 'rows' => 3, 'cols' => 80 ),
-                'ordinal' => array( 'label' => 'Order', 'size' => 1)
+                'description' => array( 'label' => 'Description', 'type' => 'textarea', 'rows' => 3, 'cols' => 80 )
             ),
-            'required' => array( 'field', 'description', 'ordinal' ),
+            'required' => array( 'field', 'description' ),
             'unique' => 0
         ),
         FateGameGlobals::STAT_CONSEQUENCE => array(
@@ -69,10 +67,9 @@ class SpecialFateStats extends SpecialPage {
             'fields' => array(
                 'label' => array( 'label' => 'Track Name', 'size' => 35 ),
                 'max_value' => array( 'label' => 'Maximum Value', 'size' => 1 ),
-                'value' => array( 'label' => 'Checked Boxes', 'size' => 1 ),
-                'ordinal' => array( 'label' => 'Order', 'size' => 1 )
+                'value' => array( 'label' => 'Checked Boxes', 'size' => 1 )
             ),
-            'required' => array( 'label', 'max_value', 'value', 'ordinal' ),
+            'required' => array( 'label', 'max_value', 'value' ),
             'unique' => 0
         ),
         FateGameGlobals::STAT_FATE => array(
@@ -143,10 +140,321 @@ class SpecialFateStats extends SpecialPage {
                     // When it exists: go to the edit page
                     $this->editFractal(intval($result['msg']),0);
                 }
+            } elseif ($sub == 'Milestones') {
+                $results = array();
+                if ($request->wasPosted()) {
+                    $results = $this->processMilestoneForm($fractal_id);
+                    if (count($results['error']) == 0) {
+                        $this->saveMilestoneResults($fractal_id, $results);
+                    }
+                    $this->viewMilestones($fractal_id, $results);
+                } else {
+                    $this->viewMilestones($fractal_id);
+                }
             } else {
                 $this->listAllFractals();
             }
         }   
+    }
+    
+    private function saveMilestoneResults( $fractal_id, $results ) {
+        $output = $this->getOutput();
+        $fractal = new FateFractal($fractal_id);
+        $dbw = wfGetDB(DB_MASTER);
+        
+        foreach ($results as $form_type => $data) {
+            if ($form_type == 'form' || $form_type == 'error') {
+                continue;
+            }
+            foreach ($data as $stat_type => $rows) {
+                foreach ($rows as $row => $info) {
+                    $sql_data = array(
+                        'fractal_id' => $fractal_id,
+                        'stat_type' => $stat_type,
+                        'modified_date' => $dbw->timestamp()
+                    );
+                    foreach ($info as $field => $value) {
+                        $sql_data['stat_' . $field] = $value;
+                    }
+                    if ($form_type == 'pending') {
+                        // Clear denied reason, just in case it's set
+                        $sql_data['denied_reason'] = '';
+                        $sql_data['denied_id'] = '';
+                        $dbw->update(
+                            'fate_pending_stat',
+                            $sql_data,
+                            array( 'pending_stat_id' => $row )
+                        );
+                    } else {
+                        if ($form_type == 'named') {
+                            $sql_data['stat_label'] = $fractal->fate_game->aspects_by_id[$row]['label'];
+                            $sql_data['parent_id'] = $row;
+                        }
+                        $dbw->insert(
+                            'fate_pending_stat',
+                            $sql_data
+                        );
+                    }
+                }
+            }
+        }
+    }
+    
+    private function processMilestoneForm( $fractal_id ) {
+        $request = $this->getRequest();
+        $data = $request->getValues();
+        $fractal = new FateFractal($fractal_id);
+        $output = $this->getOutput();
+        
+        $results = array(
+            'new' => array(),
+            'named' => array(),
+            'pending' => array(),
+            'error' => array(),
+            'form' => $data
+        );
+        
+        foreach ($data as $key => $value) {
+            $value = trim($value);
+            if (preg_match("/^(\d+)_([a-z]+)_([a-z]+)_(\d+)$/", $key, $matches)) {
+                // If it was a pending stat hasn't changed, don't bother
+                if ($matches[2] == 'pending' && $fractal->pending_stats_by_id[$matches[4]]->{'stat_' . $matches[3]} == $value) {
+                    continue;
+                }
+                if (!$value) {
+                    continue;
+                }
+                $results[$matches[2]][$matches[1]][$matches[4]][$matches[3]] = $value;
+            }
+        }
+        
+        // If we have pending options and we didn't see them, flag as errors
+        foreach ($fractal->pending_stats as $type => $array) {
+            foreach ($array as $pending) {
+                // Skip any where we can't edit them anyway
+                if (!$pending->{denied_reason}) {
+                    continue;
+                }
+                // Now see if something was required was erased
+                if (array_key_exists($type, $results['pending'])) {
+                    if (!$data[$pending->{stat_type} . '_pending_field_' . $pending->{pending_stat_id}]) {
+                        $results['error']['pending'][$pending->{stat_type}][$pending->{pending_stat_id}]['field'] = 1;
+                    } elseif ($pending->{stat_type} == FateGameGlobals::STAT_STUNT) {
+                        if (!$data[$pending->{stat_type} . '_pending_description_' . $pending->{pending_stat_id}]) {
+                            $results['error']['pending'][$pending->{stat_type}][$pending->{pending_stat_id}]['description'] = 1;
+                        }
+                    }
+                } else {
+                    $results['error']['pending'][$pending->{stat_type}][$pending->{pending_stat_id}]['all'] = 1;
+                }
+            }
+        }
+        
+        // Now go through the new stunts, make sure we got descriptions and fields both
+        if (array_key_exists(FateGameGlobals::STAT_STUNT, $results['new'])) {
+            foreach ($results['new'][FateGameGlobals::STAT_STUNT] as $row => $array) {
+                $error = 0;
+                if (!array_key_exists('field', $array)) {
+                    $error = 1;
+                    $results['error']['new'][FateGateGlobals::STAT_STUNT][$row]['field'] = 1;
+                } elseif (!array_key_exists('description', $array)) {
+                    $error = 1;
+                    $results['error']['new'][FateGameGlobals::STAT_STUNT][$row]['description'] = 1;
+                }
+                if ($error) {
+                    unset($results['new'][FateGameGlobals::STAT_STUNT][$row]);
+                }
+            }
+        }
+        
+        return $results;
+    }
+    
+    private function viewMilestones( $fractal_id, $results = array() ) {
+        $user = $this->getUser();
+        $out = $this->getOutput();
+        
+        $table = '';
+        if ($fractal_id) {
+            $fractal = new FateFractal($fractal_id);
+            if ($fractal->name) {
+                // TODO: Make sure only user can edit their milestones at some point
+                $table .= $this->getMilestoneForm($fractal, $results);
+            } else {
+                $table .= "<div class='error' style='font-weight: bold; color: red'>No data found for that fractal_id; please check URL and try again.</div>";
+            }
+        } else {
+            $table .= "<div class='error' style='font-weight: bold; color: red'>Missing fractal_id argument; don't know which fractal to show.</div>";
+        }
+        $out->addHTML($table);
+    }
+    
+    private function getMilestoneForm( $fractal, $results ){
+        $user = $this->getUser();
+        $output = $this->getOutput();
+        $request = $this->getRequest();
+        
+        $form_url = $this->getPageTitle()->getSubPage('Milestones')->getLinkURL();
+        $fractal_id = $fractal->fractal_id;
+        
+        $form = '<h2>Milestone Advancements for ' . $fractal->name . '</h2>';
+        $form .= <<<EOT
+            <script type='text/javascript'>
+            </script>
+            <form action='$form_url' method='post'>
+            <input type='hidden' name='fractal_id' value='$fractal_id'/>
+EOT;
+
+        // Did we have errors? If show, display a big warning here
+        if (count($results) > 0) {
+            if (count($results['error']) > 0) {
+                $form .= "<div class='errorbox'><strong>Submission error.</strong><br/>One or more required fields seem to be missing. Please correct them below, and resubmit to save edits.</div>";
+            } else {
+                $form .= "<div class='successbox'><strong>Milestones submitted.</strong></div>";
+            }
+        }
+        
+        $form .= $fractal->getFractalBlock(1);
+        
+        $submit = 0;
+        // Start by checking for post-chargen 'holes'
+        if (count($fractal->stats[FateGameGlobals::STAT_ASPECT]) < $fractal->fate_game->aspect_count) {
+            $submit = 1;
+            $remaining = $fractal->fate_game->aspect_count - count($fractal->stats[FateGameGlobals::STAT_ASPECT]);
+            $form .= "<fieldset><legend>$remaining Remaining Aspects</legend><table><tbody>";
+            // Go through labeled Aspects first
+            foreach ($fractal->fate_game->aspects as $aspect) {
+                $found = 0;
+                foreach ($fractal->stats[FateGameGlobals::STAT_ASPECT] as $fractal_aspect) {
+                    if ($fractal_aspect->{parent_id} == $aspect['aspect_id']) {
+                        $found = 1;
+                        break;
+                    }
+                }
+                if (!$found) {
+                    if (array_key_exists(FateGameGlobals::STAT_ASPECT, $fractal->pending_stats)) {
+                        $remaining--;
+                        $pending = new stdClass();
+                        foreach ($fractal->pending_stats[FateGameGlobals::STAT_ASPECT] as $pending_aspect) {
+                            if ($pending_aspect->{parent_id} == $aspect['aspect_id']) {
+                                $pending = $pending_aspect;
+                                break;
+                            }
+                        }
+                        $form .= $this->getMilestoneRow(FateGameGlobals::STAT_ASPECT, $results, $aspect, $pending);
+                    }
+                }
+            }
+            
+            // Then do the other Aspects
+            if ($remaining) {
+                if(array_key_exists(FateGameGlobals::STAT_ASPECT, $fractal->pending_stats)) {
+                    foreach ($fractal->pending_stats[FateGameGlobals::STAT_ASPECT] as $pending_aspect) {
+                        if ($pending_aspect->{parent_id} || $pending_aspect->{original_stat_id}) {
+                            continue;
+                        }
+                        $remaining--;
+                        $form .= $this->getMilestoneRow(FateGameGlobals::STAT_ASPECT, $results, array(), $pending_aspect);
+                    }
+                }
+                while ($remaining > 0) {
+                    $form .= $this->getMilestoneRow(FateGameGlobals::STAT_ASPECT, $results, array(), new StdClass(), $remaining--);
+                }
+            }
+                
+            
+            $form .= "</tbody></table></fieldset>";
+        }
+        
+        if (count($fractal->stats[FateGameGlobals::STAT_STUNT]) < $fractal->fate_game->stunt_count) {
+            $submit = 1;
+            $remaining = $fractal->fate_game->stunt_count - count($fractal->stats[FateGameGlobals::STAT_STUNT]);
+            $form .= "<fieldset><legend>$remaining Remaining Initial Stunts</legend><table><tbody>";
+            // See if we have any pending first
+            if (array_key_exists(FateGameGlobals::STAT_STUNT, $fractal->pending_stats)) {
+                foreach ($fractal->pending_stats[FateGameGlobals::STAT_STUNT] as $pending_stunt) {
+                    $remaining--;
+                    $form .= $this->getMilestoneRow(FateGameGlobals::STAT_STUNT, $results, array(), $pending_stunt);
+                }
+            }
+            // Then do the leftovers
+            while ($remaining > 0) {
+                $form .= $this->getMilestoneRow(FateGameGlobals::STAT_STUNT, $results, array(), new StdClass(), $remaining--);
+            }
+            $form .= "</tbody></table></fieldset>";
+        }
+
+        if ($submit) {
+            $form .= "<input type='submit' value='Submit'/>";
+        } else {
+            $form .= "<div class='error' style='font-weight: bold; color: red;'>No pending milestones found for this character.</div>";
+        }
+        $form .= "</form>";
+        
+        return $form;
+    }
+    
+    private function getMilestoneRow( $stat_type, $results, $game_stat, $pending_stat, $counter = 0 ) {
+        $pending = 0;
+        if ($pending_stat->{pending_stat_id}) {
+            $pending = 1;
+        }
+        $label = '';
+        if ($stat_type == FateGameGlobals::STAT_ASPECT) {
+            $label = ($game_stat['label'] ? $game_stat['label'] : 'Other') . " Aspect:";
+        } elseif ($stat_type == FateGameGlobals::STAT_STUNT) {
+            $label = 'New Stunt:';
+        }
+        $id = $stat_type . '_';
+        $row_type = 'new';
+        $group = $counter;
+        if ($pending) {
+            $id .= 'pending_field_' . $pending_stat->{pending_stat_id};
+            $row_type = 'pending';
+            $group = $pending_stat->{pending_stat_id};
+        } elseif ($game_stat['aspect_id']) {
+            $id .= 'named_field_' . $game_stat['aspect_id'];
+            $row_type = 'named';
+            $group = $game_stat['aspect_id'];
+        } else {
+            $id .= 'new_field_' . $counter;
+        }
+        $value = ($pending ? htmlspecialchars($pending_stat->{stat_field}, ENT_QUOTES) : '');
+        if (count($results) > 0 && array_key_exists($id, $results['form'])) {
+            $value = htmlspecialchars($results['form'][$id], ENT_QUOTES);
+        }
+        $disabled = '';
+        $message = '';
+        if ($pending) {
+            if ($pending_stat->{denied_reason}) {
+                $message = "Denied by " . $pending_stat->{denied_user} . " on " . FateGameGlobals::getDisplayDate($pending_stat->{modified_date}) .
+                           " for: <em>" . $pending_stat->{denied_reason} . "</em>";
+            } else {
+                $message = "Pending approval; submitted on " . FateGameGlobals::getDisplayDate($pending_stat->{modified_date});
+                $disabled = 'disabled';
+            }
+        }
+        $row = "<tr><td class='mw-label'><label for='$id'>$label</label></td>".
+               "<td class='mw-input'><input type='text' id='$id' name='$id' value='$value' size='35' $disabled/></tr>";
+        if ($results['error'][$row_type][$stat_type][$group]['all'] || $results['error'][$row_type][$stat_type][$group]['field']) {
+            $row .= "<tr><td>&nbsp;</td><td class='error'>Field required.</td></tr>";
+        }
+        if ($stat_type == FateGameGlobals::STAT_STUNT) {
+            $id = $stat_type . '_' . ($pending ? 'pending_description_' . $pending_stat->{pending_stat_id} : 'new_description_' . $counter);
+            $value = ($pending ? htmlspecialchars($pending_stat->{stat_description}, ENT_QUOTES) : '');
+            if (count($results) > 0 && array_key_exists($id, $results['form'])) {
+                $value = htmlspecialchars($results['form'][$id], ENT_QUOTES);
+            }
+            $row .= "<tr><td class='mw-label'><label for='$id'>Description:</label></td>".
+                    "<td class='mw-input'><textarea name='$id' id='$id' rows=3 cols=80 $disabled>$value</textarea></td></tr>";
+            if ($results['error'][$row_type][$stat_type][$group]['all'] || $results['error'][$row_type][$stat_type][$group]['description']) {
+                $row .= "<tr><td>&nbsp;</td><td class='error'>Field required.</td></tr>";
+            }
+        }
+        if ($message) {
+            $row .= "<tr><td>&nbsp;</td><td class='success'>$message</td></tr>";
+        }
+        return $row;
     }
     
     private function cleanResults( $results ) {
@@ -174,14 +482,16 @@ class SpecialFateStats extends SpecialPage {
         }
         
         foreach ($results['edit'] as $stat_id => $changes ) {
-            $updates = array();
+            $updates = array(
+                'modified_date' => $dbw->timestamp()
+            );
             if ($fractal->stats_by_id[$stat_id]->{stat_type} == FateGameGlobals::STAT_MODE) {
                 $update_modeskills = 1;
             }
             foreach ($changes as $field => $change) {
                 if ($fractal->stats_by_id[$stat_id]->{stat_type} == FateGameGlobals::STAT_MODE && $field == 'field') {
                     $updates['stat_field'] = $fractal->fate_game->modes_by_id[$change]['label'];
-                    $updates['mode_parent_id'] = $change;
+                    $updates['parent_id'] = $change;
                 } else {
                     $updates['stat_' . $field] = $change;
                 }
@@ -200,11 +510,12 @@ class SpecialFateStats extends SpecialPage {
                 }
                 $inserts = array(
                     'fractal_id' => $fractal_id,
-                    'stat_type' => $stat_type
+                    'stat_type' => $stat_type,
+                    'modified_date' => $dbw->timestamp()
                 );
                 if ($stat_type == FateGameGlobals::STAT_MODE) {
                     $update_modeskills = 1;
-                    $inserts['mode_parent_id'] = $data['field'];
+                    $inserts['parent_id'] = $data['field'];
                     $inserts['stat_value'] = $data['value'];
                     $inserts['stat_field'] = $fractal->fate_game->modes_by_id[$data['field']]['label'];
                 } else {
@@ -255,6 +566,7 @@ class SpecialFateStats extends SpecialPage {
                 $stat_type = $matches[1];
                 $field = $matches[2];
                 $stat_id = $matches[3];
+                $value = trim($value);
                 
                 // If we're already deleting this, then skip
                 if ($results['delete'][$stat_id]) {
@@ -264,13 +576,17 @@ class SpecialFateStats extends SpecialPage {
                 } else if ($fractal->stats_by_id[$stat_id]->{'stat_' . $field} == $value) {
                     continue;
                     
-                // If we're looking at a mode's field, compare the mode_parent_id
-                } else if ($stat_type == FateGameGlobals::STAT_MODE && $field == 'field' && $fractal->stats_by_id[$stat_id]->{'mode_parent_id'} == $value) {
+                // If we're looking at a mode's field, compare the parent_id
+                } else if ($stat_type == FateGameGlobals::STAT_MODE && $field == 'field' && $fractal->stats_by_id[$stat_id]->{'parent_id'} == $value) {
                     continue;
-                }
                 
-                $value = trim($value);
-                if (!$value && in_array($field, $this->edit_data[$stat_type]['required'])) {
+                // Compare parent_id for skill labels as well
+                // TODO: Handling for customized skill names
+                } else if ($stat_type == FateGameGlobals::STAT_SKILL && $field == 'label' && $fractal->stats_by_id[$stat_id]->{'parent_id'} == $value) {
+                    continue;
+                
+                // If we're looking at an empty value, and it was required here, flag it an error
+                } else if (!$value && in_array($field, $this->edit_data[$stat_type]['required'])) {
                     $results['error']['required'][$stat_id][] = $field;
                     continue;
                 }
@@ -278,6 +594,7 @@ class SpecialFateStats extends SpecialPage {
                 // If we're here, we found a change; save it to make an update
                 if ($stat_type == FateGameGlobals::STAT_SKILL && $field == 'label') {
                     $results['edit'][$stat_id][$field] = $fractal->fate_game->skills_by_id[$value]['label'];
+                    $results['edit'][$stat_id]['parent_id'] = $value;
                 } else {
                     $results['edit'][$stat_id][$field] = $value;
                 }
@@ -607,10 +924,9 @@ EOT;
                 edit_data[{$const['aspect']}] = {
                     fields: { 
                         label: { label: 'Label (Optional)', size: 35 },
-                        field: { label: 'Aspect', size: 35 },
-                        ordinal: { label: 'Order', size: 1 }
+                        field: { label: 'Aspect', size: 35 }
                     },
-                    required: [ 'field', 'ordinal' ],
+                    required: [ 'field' ],
                     unique: 0
                 };
                 edit_data[{$const['mode']}] = {
@@ -632,10 +948,9 @@ EOT;
                 edit_data[{$const['stunt']}] = {
                     fields: {
                         field: { label: 'Title', size: 35 },
-                        description: { label: 'Description', type: 'textarea', rows: 3, cols: 80 },
-                        ordinal: { label: 'Order', size: 1 }
+                        description: { label: 'Description', type: 'textarea', rows: 3, cols: 80 }
                     },
-                    required: [ 'field', 'description', 'ordinal' ],
+                    required: [ 'field', 'description' ],
                     unique: 0
                 };
                 edit_data[{$const['consequence']}] = {
@@ -660,10 +975,9 @@ EOT;
                     fields: {
                         label: { label: 'Track Name', size: 35 },
                         max_value: { label: 'Maximum Value', size: 1 },
-                        value: { label: 'Checked Boxes', size: 1 },
-                        ordinal: { label: 'Order', size: 1 }
+                        value: { label: 'Checked Boxes', size: 1 }
                     },
-                    required: [ 'label', 'max_value', 'value', 'ordinal' ],
+                    required: [ 'label', 'max_value', 'value' ],
                     unique: 0
                 };
                 edit_data[{$const['fate']}] = {
@@ -729,7 +1043,7 @@ EOT;
                     return newList;
                 }
                 
-                function createInputCell(field_info, name, stat_type, new_id, field, new_ordinal, mode_skill_label, mode_value) {
+                function createInputCell(field_info, name, stat_type, new_id, field, mode_skill_label, mode_value) {
                     var cell = document.createElement('td');
                     cell.className = 'mw-input';
                     if (stat_type == TYPE_CONDITION && field_info.type == 'select') {
@@ -760,9 +1074,6 @@ EOT;
                         } else {
                             input.setAttribute('oninput', 'addNewRow(' + stat_type + ',' + new_id + ');');
                         }
-                        if (field == 'ordinal') {
-                            input.setAttribute('value', new_ordinal);
-                        }
                         cell.appendChild(input);
                     }
                     return cell;
@@ -790,13 +1101,12 @@ EOT;
                         var new_id = parseInt(id) + 1;
                         var new_body = document.getElementById('newstat_' + stat_type);
                         var body = document.getElementById('stat_' + stat_type);
-                        var new_ordinal = body.rows.length + new_body.rows.length + 1;
                         
                         var row = document.createElement('tr');
                         for (var field in fields) {
                             var input_name = stat_type + '_new_' + field + '_' + new_id;
                             row.appendChild(createLabelCell(fields[field], input_name));
-                            row.appendChild(createInputCell(fields[field], input_name, stat_type, new_id, field, new_ordinal, mode_skill_label, mode_value));
+                            row.appendChild(createInputCell(fields[field], input_name, stat_type, new_id, field, mode_skill_label, mode_value));
                         }
                         row.appendChild(emptyCell());
                         row.appendChild(emptyCell());
@@ -872,7 +1182,7 @@ EOT;
                     $form .= "</tbody></table><h4>Add New ". $stat_labels[$stat_id] . "</h4><table><tbody id='newstat_" . $stat_id . "'>";
                     $count = (count($results) > 0 ? $results['new'][$stat_id]['max'] : 1);
                     for ($i = 1; $i <= $count; $i++) {
-                        $form .= $this->getEditStatRow($stat_id, $stat_data, array( 'new_ordinal' => count($fractal->stats[$stat_id]) + $i ), $fractal->fate_game, $results, $i);
+                        $form .= $this->getEditStatRow($stat_id, $stat_data, array(), $fractal->fate_game, $results, $i);
                     }
                 }
                 $form .= "</tbody></table>";
@@ -907,7 +1217,7 @@ EOT;
             foreach ($fractal->stats[FateGameGlobals::STAT_MODE] as $mode) {
                 $has_discipline = 0;
                 $parent_skill = '';
-                foreach ($fractal->fate_game->modes_by_id[$mode->{'mode_parent_id'}]['skill_list'] as $sk) {
+                foreach ($fractal->fate_game->modes_by_id[$mode->{'parent_id'}]['skill_list'] as $sk) {
                     if ($fractal->fate_game->skills_by_id[$sk]['has_disciplines']) {
                         $has_discipline = 1;
                         $parent_skill = $fractal->fate_game->skills_by_id[$sk];
@@ -941,7 +1251,7 @@ EOT;
                     $form .= "</tbody><tbody id='newstat_" . $stat_id . "'>";
                     $count = (count($results) > 0 ? $results['new'][$stat_id]['max'] : 1);
                     for ($i = 1; $i <= $count; $i++) {
-                        $form .= $this->getEditStatRow($stat_id, $modeskill_data, array( 'new_ordinal' => $i ), $fractal->fate_game, $results, $i);
+                        $form .= $this->getEditStatRow($stat_id, $modeskill_data, array(), $fractal->fate_game, $results, $i);
                     }
                 }
                 $form .= "</tbody>";
@@ -992,10 +1302,8 @@ EOT;
         $new = '';
         $oninput = '';
         $onchange = '';
-        $new_ordinal = 0;
         if (is_array($stat)) {
             $new = 'new_';
-            $new_ordinal = $stat['new_ordinal'];
             if (!$stat_data['unique']) {
                 if ($stat_data['modeskill']) {
                     $oninput = "oninput='addNewRow($stat_id, $new_count, \"" . $stat_data['fields']['label']['label'] ."\", " . $stat_data['mode_value'] . ");'";
@@ -1009,9 +1317,6 @@ EOT;
         $row = '<tr>';
         foreach ($stat_data['fields'] as $field => $field_data) {
             $value = htmlspecialchars($stat->{'stat_' . $field}, ENT_QUOTES);
-            if ($field == 'ordinal' && $new_ordinal > 0) {
-                $value = $new_ordinal;
-            }
             $error = '';
             if (!is_array($stat) && $results['error']['required'][$stat->{fractal_stat_id}] && in_array($field,$results['error']['required'][$stat->{fractal_stat_id}])) {
                 $error = "class='formerror'";

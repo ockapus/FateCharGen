@@ -1,12 +1,12 @@
--- Fractal stats table setup for FateCharGen extension
+-- Pending fractal stats table setup for FateCharGen extension
 -- Created originally for aliencity.org
 -- porpentine@gmail.com
--- Last Update: April 20, 2016
+-- Last Update: April 27, 2016
 
--- Add primary fractal stat table
-CREATE TABLE IF NOT EXISTS /*_*/fate_fractal_stat (
+-- Add pending fractal stat table
+CREATE TABLE IF NOT EXISTS /*_*/fate_pending_stat (
     -- Unique ID
-    fractal_stat_id int NOT NULL PRIMARY KEY AUTO_INCREMENT,
+    pending_stat_id int NOT NULL PRIMARY KEY AUTO_INCREMENT,
     -- Fractal this stat belongs to
     fractal_id int default NULL,
     -- What type of stat is this? 
@@ -29,10 +29,16 @@ CREATE TABLE IF NOT EXISTS /*_*/fate_fractal_stat (
     shared_fractal_id int default NULL,
     -- Boolean flag: when using the mode system, this is a discipline of a primary skill (ie Engineering, for Science)
     is_discipline tinyint default NULL,
-    -- Id of the game level definition for various stats (modes, aspects with labels, skills, etc)
+    -- For Modes, the id of the game level definition 
     parent_id int default NULL,
     -- When was this stat last modified?
-    modified_date varbinary(14) default NULL
+    modified_date varbinary(14) default NULL,
+    -- Has this stat been denied? If so, why?
+    denied_reason text default NULL,
+    -- User ID of the staff member who denied this requested stat
+    denied_id int default NULL,
+    -- ID of original stat, if this is an update
+    original_stat_id int default NULL 
 ) /*$wgDBTableOptions*/;
 
-CREATE INDEX /*i*/ffs_fractal_id ON /*_*/fate_fractal_stat (fractal_id);
+CREATE INDEX /*i*/fps_fractal_id ON /*_*/fate_pending_stat (fractal_id);

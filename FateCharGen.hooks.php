@@ -21,6 +21,7 @@ class FateCharGenHooks {
         /* Tables that define the 'fractals' for a game, where a fractal is any thing that has stats */
         $updater->addExtensionTable( 'fate_fractal', __DIR__ . '/sql/Fractal.sql' );
         $updater->addExtensionTable( 'fate_fractal_stat', __DIR__ . '/sql/FractalStat.sql' );
+        $updater->addExtensionTable( 'fate_pending_stat', __DIR__ . '/sql/PendingStat.sql' );
         return true;
     }
     
@@ -43,13 +44,15 @@ class FateCharGenHooks {
         if (
             $user->isAllowed('fategm') &&
             $title->isSpecial( 'FateStats' ) &&
-            ($sub == 'Edit' || $sub == 'View' || $sub == 'ViewSheet' ) &&
+            ($sub == 'Edit' || $sub == 'View' || $sub == 'ViewSheet' || $sub == 'Milestones' ) &&
             $fractal_id )
         {            
             $view = SpecialPage::getTitleFor('FateStats', 'View');
             $edit = SpecialPage::getTitleFor('FateStats', 'Edit');
-            $view_class = ($sub == 'Edit' ? false : 'selected');
+            $milestone = SpecialPage::getTitleFor('FateStats', 'Milestones');
+            $view_class = ($sub == 'View' || $sub == 'ViewSheet' ? 'selected': false );
             $edit_class = ($sub == 'Edit' ? 'selected' : false );
+            $mile_class = ($sub == 'Milestones' ? 'selected' : false );
             
             $links['views'][$title->getNamespaceKey()] = array (
                 'class' => $view_class,
@@ -60,6 +63,11 @@ class FateCharGenHooks {
                 'class' => $edit_class,
                 'text' => 'Edit',
                 'href' => $edit->getFullUrl("fractal_id=$fractal_id")
+            );
+            $links['views']['milestone'] = array(
+                'class' => $mile_class,
+                'text' => 'Milestones',
+                'href' => $milestone->getFullUrl("fractal_id=$fractal_id")
             );
         }        
         
