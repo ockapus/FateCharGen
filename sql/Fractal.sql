@@ -1,7 +1,7 @@
 -- Fractal table setup for FateCharGen extension
 -- Created originally for Alien City
 -- porpentine@gmail.com
--- Last Update: December 2, 2015
+-- Last Update: April 29, 2016
 
 -- Add primary fractal table
 CREATE TABLE IF NOT EXISTS /*_*/fate_fractal (
@@ -29,7 +29,9 @@ CREATE TABLE IF NOT EXISTS /*_*/fate_fractal (
     -- When was this fractal marked as approved?
     approve_date varbinary(14) default NULL,
     -- When was this fractal marked as frozen?
-    frozen_date varbinary(14) default NULL
+    frozen_date varbinary(14) default NULL,
+    -- When was the last time stats on this fractal were updated?
+    update_date varbinary(14) default NULL
 ) /*$wgDBTableOptions*/;
 
 CREATE INDEX /*i*/ff_game_id ON /*_*/fate_fractal (game_id);

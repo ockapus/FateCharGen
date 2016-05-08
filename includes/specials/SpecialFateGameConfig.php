@@ -349,6 +349,7 @@ class SpecialFateGameConfig extends SpecialPage {
         $output = $this->getOutput();
         $user = $this->getUser();
         $game = new FateGame($game_id);
+        $made_update = 0;
         $dbw = wfGetDB(DB_MASTER);
         
         foreach ($results['deny'] as $fractal_id => $data) {
@@ -406,8 +407,17 @@ class SpecialFateGameConfig extends SpecialPage {
                     'fate_pending_stat',
                     array( 'pending_stat_id' => $pending_id )
                 );
+                $made_update = 1;
             }
-        }           
+        }    
+
+        if ($made_update) {
+            $dbw->update(
+                'fate_fractal',
+                array( 'update_date' => $dbw->timestamp() ),
+                array( 'fractal_id' => $fractal_id )
+            );
+        }        
     }
     
     private function viewPendingApprovals( $results = array() ) {

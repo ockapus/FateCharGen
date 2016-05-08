@@ -468,7 +468,7 @@ EOT;
     private function saveFractalEdits( $fractal_id, $results ) {
         $fractal = new FateFractal($fractal_id);
         $update_modeskills = 0;
-        $output = $this->getOutput();
+        $made_update = 0;
         $dbw = wfGetDB(DB_MASTER);
      
         foreach ($results['delete'] as $stat_id => $junk) {
@@ -479,6 +479,7 @@ EOT;
                 'fate_fractal_stat',
                 array( 'fractal_stat_id' => $stat_id )
             );
+            $made_update = 1;
         }
         
         foreach ($results['edit'] as $stat_id => $changes ) {
@@ -501,6 +502,7 @@ EOT;
                 $updates,
                 array( 'fractal_stat_id' => $stat_id )
             );
+            $made_update = 1;
         }
         
         foreach ($results['new'] as $stat_type => $rows) {
@@ -530,7 +532,16 @@ EOT;
                     'fate_fractal_stat',
                     $inserts
                 );
+                $made_update = 1;
             }
+        }
+        
+        if ($made_update) {
+            $dbw->update(
+                'fate_fractal',
+                array( 'update_date' => $dbw->timestamp() ),
+                array( 'fractal_id' => $fractal_id )
+            );
         }
         
         if ($update_modeskills) {
@@ -678,6 +689,7 @@ EOT;
             } else {
                 $dbw = wfGetDB(DB_MASTER);
                 $new_fractal['create_date'] = $dbw->timestamp();
+                $new_fractal['update_date'] = $dbw->timestamp();
                 $dbw->insert( 'fate_fractal', $new_fractal );
                 $result['msg'] = $dbw->insertId();
             }
