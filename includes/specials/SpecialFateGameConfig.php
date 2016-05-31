@@ -897,6 +897,24 @@ EOT;
                     }
                     $table .= "</table></td></tr>";
                 }
+                $table .= "<tr><td class='mw-label' nowrap>Turn Order Skills:</td>";
+                if (count($game->turn_order) > 0) {
+                    $first = 1;
+                    foreach ($game->turn_order as $index => $track) {
+                        if (!$first) {
+                            $table .= "<tr><td>&nbsp;</td>";
+                        }
+                        $first = 0;
+                        $table .= "<td class='mw-label'><strong>" . ($index == 1 ? 'Physical' : 'Mental') . ":</strong></td>";
+                        $skills = array();
+                        foreach ($track as $skill_id) {
+                            $skills[] = $game->skills_by_id[$skill_id]['label'];
+                        }
+                        $table .= "<td colspan=2>" . implode(', ', $skills) . "</td></tr>";
+                    }
+                } else {
+                    $table .= "<td colspan=3>Undefined</td></tr>";
+                }
                 $table .= "<tr><td class='mw-label' nowrap>Refresh Rate:</td><td colspan=3>$game->refresh_rate</td></tr>".
                           "<tr><td class='mw-label' nowrap>Initial Stunt Slots:</td><td colspan=3>$game->stunt_count</td></tr>".
                           "<tr><td class='mw-label' nowrap>Initial Stress Boxes:</td><td colspan=3>$game->stress_count</td></tr>";

@@ -671,6 +671,9 @@ EOT;
         } elseif ($new_fractal['fractal_type'] == 'Character') {
             $result['error'] = 1;
             $result['msg'] = '"Character" is a reserved type, only available through chargen.';
+        } elseif ($new_fractal['fractal_type'] == 'Setting') {
+            $result['error'] = 1;
+            $result['msg'] = '"Setting" is a reserved type, unique to a single fractal for each game.';
         } elseif (!$new_fractal['fractal_name']) {
             $result['error'] = 1;
             $result['msg'] = 'Please supply a name for the new fractal.';
@@ -1527,6 +1530,10 @@ EOT;
                 }
                 // 'Character' is a protected type, handled by full chargen
                 if ($fractal->{fractal_type} == 'Character') {
+                    continue;
+                }
+                // 'Setting' is also a protected type, used to store game world-level aspects
+                if ($fractal->{fractal_type{ == 'Setting') {
                     continue;
                 }
                 $this_list[] = "'" . $fractal->{fractal_type} . "'";

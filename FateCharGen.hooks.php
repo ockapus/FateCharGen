@@ -17,6 +17,7 @@ class FateCharGenHooks {
         $updater->addExtensionTable( 'fate_game_mode_skill', __DIR__ . '/sql/GameModeSkill.sql' );
         $updater->addExtensionTable( 'fate_game_skill', __DIR__ . '/sql/GameSkill.sql' );
         $updater->addExtensionTable( 'fate_game_stress', __DIR__ . '/sql/GameStress.sql' );
+        $updater->addExtensionTable( 'fate_game_turn_order', __DIR__ . '/sql/GameTurnOrder.sql' );
         
         /* Tables that define the 'fractals' for a game, where a fractal is any thing that has stats */
         $updater->addExtensionTable( 'fate_fractal', __DIR__ . '/sql/Fractal.sql' );

@@ -1,7 +1,7 @@
 -- Fractal table setup for FateCharGen extension
 -- Created originally for Alien City
 -- porpentine@gmail.com
--- Last Update: April 29, 2016
+-- Last Update: May 19, 2016
 
 -- Add primary fractal table
 CREATE TABLE IF NOT EXISTS /*_*/fate_fractal (
@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS /*_*/fate_fractal (
     game_id int default NULL,
     -- Register ID this Fractal belongs to, if a character
     register_id int default NULL,
+    -- DBRef this Fractal is tied to, for Locations (and characters, maybe?)
+    dbref varchar(8) default NULL,
     -- arbitrary fractal type
     fractal_type varchar(32) default NULL,
     -- Boolean flag: stats for this fractal should only be displayed to owner or GM

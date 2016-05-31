@@ -194,6 +194,23 @@ class FateGame {
                 }
             }
             
+            $turn_list = $dbr->select(
+                'fate_game_turn_order',
+                '*',
+                array( 'game_id' => $game_id ),
+                __METHOD__,
+                array( 'ORDER BY' => array( 'is_physical', 'ordinal' ) )
+            );
+            $this->turn_order = array();
+            if ($turn_list->numRows() > 0) {
+                foreach ($turn_list as $turn) {
+                    if (! is_array($this->turn_order[$turn->{is_physical}]) ) {
+                        $this->turn_order[$turn->{is_physical}] = array();
+                    }
+                    $this->turn_order[$turn->{is_physical}][$turn->{ordinal}] = $turn->{skill_id};
+                }
+            }
+            
             $fractal_list = $dbr->select(
                 array( 'f' => 'fate_fractal',
                        'r' => 'muxregister_register',
@@ -209,12 +226,13 @@ class FateGame {
                        'f.submit_date',
                        'f.approve_date',
                        'f.frozen_date',
-                       'pending' => 'count(p.pending_stat_id)' ),
+                       'pending' => 'p.pending_stat_id' ),
                 array( 'f.game_id' => $game_id ),
                 __METHOD__,
-                array( 'ORDER BY' => array ('fractal_type', 'fractal_name', 'canon_name' ) ),
-                array( 'r' => array( 'LEFT JOIN', 'f.register_id = r.register_id' ),
-                       'p' => array( 'LEFT JOIN', 'f.fractal_id = p.fractal_id' ) )
+                array( 'GROUP BY' => array ('fractal_id'),
+                       'ORDER BY' => array ('fractal_type', 'fractal_name', 'canon_name' ) ),
+                array( 'p' => array( 'LEFT JOIN', 'f.fractal_id = p.fractal_id' ),
+                       'r' => array( 'LEFT JOIN', 'f.register_id = r.register_id' ) )
             );
             $this->fractals = array();
             $this->pending_stat_approvals = 0;
