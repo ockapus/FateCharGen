@@ -14,6 +14,8 @@ class FateFractal {
     public $frozen_date;
     public $stats;
     
+    // TODO: Implement handling for Conditions
+    
     public function __construct( $fractal_id ) {
         $this->fractal_id = $fractal_id;
         
@@ -40,6 +42,7 @@ class FateFractal {
         
         if ($data) {
             $this->fate_game = new FateGame( $data->{game_id} );
+            $this->game_id = $data->{game_id};
             $this->user_id = $data->{user_id};
             $this->user_name = $data->{user_name};
             $this->name = ( $data->{canon_name} ? $data->{canon_name} : $data->{fractal_name} );
@@ -55,14 +58,24 @@ class FateFractal {
                 '*',
                 array( 'fractal_id' => $fractal_id ),
                 __METHOD__,
-                array( 'ORDER BY' => array( 'stat_type', 'stat_ordinal', 'stat_field' ) )
+                array( 'ORDER BY' => array( 'stat_type', 'stat_label', 'stat_field' ) )
             );
             $this->stats = array();
+            $this->stats_by_id = array();
             if ($stat_data->numRows() > 0) {
                 foreach ($stat_data as $stat) {
                     if (! is_array($this->stats[$stat->{stat_type}]) ) {
                         $this->stats[$stat->{stat_type}] = array();
                     }
+                    // Add info about major aspects while we're here
+                    if ($stat->{stat_type} == FateGameGlobals::STAT_ASPECT) {
+                        if ($stat->{parent_id}) {
+                            $stat->{is_major} = $this->fate_game->aspects_by_id[$stat->{parent_id}]['is_major'];
+                        } else {
+                            $stat->{is_major} = false;
+                        }
+                    }
+                    $this->stats_by_id[$stat->{fractal_stat_id}] = $stat;
                     $this->stats[$stat->{stat_type}][] = $stat;
                     if ($this->fate_game->skill_distribution == FateGameGlobals::SKILL_DISTRIBUTION_MODES && $stat->{stat_type} == FateGameGlobals::STAT_MODE) {
                         if (! is_array($this->skills_by_mode)) {
@@ -80,7 +93,55 @@ class FateFractal {
                 }
             }
             
+            $pending_data = $dbr->select(
+                'fate_pending_stat',
+                '*',
+                array( 'fractal_id' => $fractal_id ),
+                __METHOD__,
+                array( 'ORDER BY' => array( 'stat_type', 'stat_label', 'stat_field' ) )
+            );
+            $this->pending_stats = array();
+            $this->pending_stats_by_id = array();
+            if ($pending_data->numRows() > 0) {
+                foreach ($pending_data as $stat) {
+                    if (! is_array($this->pending_stats[$stat->{stat_type}])) {
+                        $this->pending_stats[$stat->{stat_type}] = array();
+                    }
+                    if ($stat->{denied_id}) {
+                        $stat->{denied_user} = User::newFromId($stat->{denied_id})->getName();
+                    }
+                    $this->pending_stats[$stat->{stat_type}][] = $stat;
+                    $this->pending_stats_by_id[$stat->{pending_stat_id}] = $stat;
+                }
+            }
+            
             /* Do re-sorting as necessary for various types */
+            if (array_key_exists(FateGameGlobals::STAT_ASPECT, $this->stats)) {
+                @usort($this->stats[FateGameGlobals::STAT_ASPECT], function($a, $b) {
+                    if ($a->{is_major} == $b->{is_major}) {
+                        if ($a->{stat_label} && $b->{stat_label}) {
+                            return strcmp($a->{stat_label}, $b->{stat_label});
+                        } elseif ($a->{stat_label}) {
+                            return -1;
+                        } elseif ($b->{stat_label}) {
+                            return 1;
+                        } else {
+                            return strcmp($a->{stat_field}, $b->{stat_field});
+                        }
+                    } else {
+                        return ($a->{is_major} < $b->{is_major} ? 1 : -1);
+                    }
+                });
+            }
+            if (array_key_exists(FateGameGlobals::STAT_MOOK, $this->stats)) {
+                @usort($this->stats[FateGameGlobals::STAT_MOOK], function($a, $b) {
+                    if ($a->{stat_value} == $b->{stat_value}) {
+                        return strcmp($a->{stat_field}, $b->{stat_field});
+                    } else {
+                        return ($a->{stat_value} < $b->{stat_value} ? 1 : -1);
+                    }
+                });
+            }
             if (array_key_exists(FateGameGlobals::STAT_CONSEQUENCE, $this->stats)) {
                 @usort($this->stats[FateGameGlobals::STAT_CONSEQUENCE], function($a, $b) {
                     if ($a->{stat_display_value} == $b->{stat_display_value}) {
@@ -98,16 +159,15 @@ class FateFractal {
                         return ($b->{stat_value} < $a->{stat_value} ? -1 : 1 );
                     }
                 });
-                foreach ($this->stats[FateGameGlobals::STAT_SKILL] as $skill) {
-                    $mode = $skill->{stat_mode};
-                    $level = $skill->{stat_value} - $this->skills_by_mode[$mode]['mode_value'];
-                    $this->skills_by_mode[$mode]['skills_by_level'][$level][] = $skill;
+                if (array_key_exists(FateGameGlobals::STAT_SKILL, $this->stats)) {
+                    foreach ($this->stats[FateGameGlobals::STAT_SKILL] as $skill) {
+                        $mode = $skill->{stat_mode};
+                        $level = $skill->{stat_value} - $this->skills_by_mode[$mode]['mode_value'];
+                        $this->skills_by_mode[$mode]['skills_by_level'][$level][] = $skill;
+                    }
                 }
             }
-            if (array_key_exists(FateGameGlobals::STAT_SKILL, $this->stats) && 
-                ($this->fate_game->skill_distribution == FateGameGlobals::SKILL_DISTRIBUTION_PYRAMID || 
-                 $this->fate_game->skill_distribution == FateGameGlobals::SKILL_DISTRIBUTION_COLUMNS ||
-                 !$this->stats[FateGameGlobals::STAT_SKILL][0]->{stat_ordinal})) {
+            if (array_key_exists(FateGameGlobals::STAT_SKILL, $this->stats)) {
                 @usort($this->stats[FateGameGlobals::STAT_SKILL], function($a, $b) {
                     if ($a->{stat_value} == $b->{stat_value}) {
                         return 0;
@@ -119,7 +179,85 @@ class FateFractal {
         }
     }
     
-    public function getFractalBlock() {
+    public function resetModeSkills() {
+        if ($this->fate_game->skill_distribution == FateGameGlobals::SKILL_DISTRIBUTION_MODES) {
+            $dbr = wfGetDB(DB_SLAVE);
+            $dbw = wfGetDB(DB_MASTER);
+         
+            // Delete Current skills
+            $dbw->delete(
+                'fate_fractal_stat',
+                array( 'fractal_id' => $this->fractal_id,
+                       'stat_type' => FateGameGlobals::STAT_SKILL )
+            );
+            
+            // Get modes
+            $modes = $dbr->select(
+                'fate_fractal_stat',
+                '*',
+                array( 'fractal_id' => $this->fractal_id,
+                       'stat_type' => FateGameGlobals::STAT_MODE )
+            );
+            
+            // Get skills per mode
+            $new_skills = array();
+            $levels = array();
+            if ($modes->numRows() > 0) {
+                foreach ($modes as $mode) {
+                    $levels[] = $mode->{stat_value};
+                    foreach ($this->fate_game->modes_by_id[$mode->{parent_id}]['skill_list'] as $skill_id) {
+                        $new_skills[$mode->{stat_value}][] = array( 'id' => $skill_id, 'value' => 0, 'mode' => $mode->{fractal_stat_id} );
+                    }
+                }
+            }
+            
+            // Promote skills
+            sort($levels);
+            $sub = $levels;
+            foreach ($levels as $level) {
+                array_shift($sub);
+                if (count($sub) == 0) {
+                    break;
+                }
+                foreach ($sub as $s) {
+                    foreach ($new_skills[$level] as $base_index => $base_skill) {
+                        foreach ($new_skills[$s] as $next_index => $next_skill) {
+                            if ($base_skill['id'] == $next_skill['id']) {
+                                $new_skills[$s][$next_index]['value'] += $base_skill['value'] + 1;
+                                unset($new_skills[$level][$base_index]);
+                                continue;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Save new skills
+            foreach ($new_skills as $mode_level => $skill_list) {
+                foreach ($skill_list as $skill) {
+                    $inserts = array( 
+                        'fractal_id' => $this->fractal_id,
+                        'stat_type' => FateGameGlobals::STAT_SKILL,
+                        'stat_label' => $this->fate_game->skills_by_id[$skill['id']]['label'],
+                        'stat_value' => ($mode_level + $skill['value']),
+                        'stat_mode' => $skill['mode']
+                    );
+                    $dbw->insert(
+                        'fate_fractal_stat',
+                        $inserts
+                    );
+                }
+            }
+        }
+    }
+    
+    public function getFractalBlock( $collapse = 0 ) {
+        $class = '';
+        $table_class = '';
+        if ($collapse) {
+            $class = "class='mw-collapsible mw-collapsed'";
+            $table_class = "class='mw-collapsible-content'";
+        }
         $block = <<< EOT
             <style type='text/css'>
                 #fractalblock { border: 2px solid #295079; width: auto; margin: 0 0 0.5em 0p; padding: 5px 15px; }
@@ -128,9 +266,9 @@ class FateFractal {
                 #fractalblock .stunt_name { font-weight: bold; }
                 #fractalblock .aspect_field { font-weight: bold; font-style: italic; }
             </style>
-            <div id='fractalblock'>
+            <div id='fractalblock' $class>
             <div class='name'>$this->name</div>
-            <table width='100%'>
+            <table width='100%' $table_class>
 EOT;
         if (array_key_exists(FateGameGlobals::STAT_ASPECT, $this->stats)) {
             $last_label = '';
@@ -198,6 +336,30 @@ EOT;
                 if ($last_label) {
                     $block .= "</td></tr>";
                 }
+            }
+        }
+        
+        if (array_key_exists(FateGameGlobals::STAT_MOOK, $this->stats)) {
+            $levels = FateGameGlobals::getMookLevels();
+            $last_label = '';
+            $first = 1;
+            foreach ($this->stats[FateGameGlobals::STAT_MOOK] as $mook) {
+                $this_label = $levels[$mook->{stat_value}];
+                if ($this_label != $last_label) {
+                    if (!$first) {
+                        $block .= "</td></tr>";
+                    } else {
+                        $first = 0;
+                    }
+                    $block .= "<tr><td class='section_label'>$this_label (" . ($mook->{stat_value} > 0 ? '+' : '') . $mook->{stat_value} . ") at:</td><td>";
+                    $last_label = $this_label;
+                } else {
+                    $block .= ", ";
+                }
+                $block .= $mook->{stat_field};
+            }
+            if ($last_label) {
+                $block .= "</td></tr>";
             }
         }
         
@@ -323,6 +485,32 @@ EOT;
                 $sheet .= "</table>";
             }
             /* Other Skill Distributions eventually go here */
+        }
+        
+        if (array_key_exists(FateGameGlobals::STAT_MOOK, $this->stats)) {
+            $sheet .= "<h2>MOOK SKILLS</h2>\n";
+            $levels = FateGameGlobals::getMookLevels();
+            $last_label = '';
+            $first = 1;
+            foreach ($this->stats[FateGameGlobals::STAT_MOOK] as $mook) {
+                $this_label = $levels[$mook->{stat_value}];
+                if ($this_label != $last_label) {
+                    if (!$first) {
+                        $sheet .= "</div>";
+                    } else {
+                        $first = 0;
+                    }
+                    $sheet .= "<div class='block'><div class='block_label'>" . $this_label . ' (' .
+                              ($mook->{stat_value} > 0 ? '+' : '') . $mook->{stat_value} . ') at</div>';
+                    $last_label = $this_label;
+                } else {
+                    $sheet .= ", ";
+                }
+                $sheet .= $mook->{stat_field};
+            }
+            if ($last_label) {
+                $sheet .= "</div>";
+            }
         }
         
         if (array_key_exists(FateGameGlobals::STAT_STUNT, $this->stats)) {

@@ -55,7 +55,7 @@ class FateGame {
                    'g.create_date',
                    'g.modified_date' ),
             array( 'r.register_id = g.register_id',
-                   game_id => $game_id )
+                   'g.game_id' => $game_id )
         );
         
         if ($data) {
@@ -76,6 +76,7 @@ class FateGame {
             $this->stress_count = $data->{stress_count};
             $this->use_consequences = ((bool) $data->{use_consequences});
             $this->private_sheet = ((bool) $data->{private_sheet});
+            $this->use_robo_refresh = ((bool) $data->{use_robo_refresh});
             $this->create_date = $data->{create_date};
             $this->modified_date = $data->{modified_date};
             
@@ -84,17 +85,20 @@ class FateGame {
                 '*',
                 array( 'game_id' => $game_id ),
                 __METHOD__,
-                array( 'ORDER BY' => 'game_aspect_ordinal' )
+                array( 'ORDER BY' => 'game_aspect_label' )
             );
             $this->aspects = array();
+            $this->aspects_by_id = array();
             if ($aspect_list->numRows() > 0) {
                 foreach ($aspect_list as $aspect) {
                     $asp = array(
+                        'aspect_id' => $aspect->{game_aspect_id},
                         'label' => $aspect->{game_aspect_label},
-                        'ordinal' => $aspect->{game_aspect_ordinal},
-                        'is_shared' => ((bool) $aspect->{is_shared})
+                        'is_shared' => ((bool) $aspect->{is_shared}),
+                        'is_major' => ((bool) $aspect->{is_major})
                     );
                     $this->aspects[] = $asp;
+                    $this->aspects_by_id[$aspect->{game_aspect_id}] = $asp;
                 }
             }
             
@@ -106,16 +110,17 @@ class FateGame {
                 array( 'ORDER BY' => 'game_skill_label' )
             );
             $this->skills = array();
+            $this->skills_by_id = array();
             if ($skill_list->numRows() > 0) {
                 foreach ($skill_list as $skill) {
                     $sk = array(
                         'skill_id' => $skill->{game_skill_id},
                         'label' => $skill->{game_skill_label},
                         'mode_cost' => $skill->{mode_cost},
-                        'has_disciplines' => ((bool) $skill->{has_disciplines}),
-                        'only_disciplines' => ((bool) $skill->{only_disciplines})
+                        'has_disciplines' => ((bool) $skill->{has_disciplines})
                     );
                     $this->skills[] = $sk;
+                    $this->skills_by_id[$sk['skill_id']] = $sk;
                 }
             }
             
@@ -128,6 +133,7 @@ class FateGame {
                     array( 'ORDER BY' => 'game_mode_label' )
                 );
                 $this->modes = array();
+                $this->modes_by_id = array();
                 foreach ($mode_list as $mode) {
                     $skill_mode_list = $dbr->select(
                         'fate_game_mode_skill',
@@ -146,6 +152,7 @@ class FateGame {
                         'skill_list' => $skill_list
                     );
                     $this->modes[] = $mo;
+                    $this->modes_by_id[$mo['mode_id']] = $mo;
                 }
             }
                 
@@ -187,9 +194,44 @@ class FateGame {
                 }
             }
             
+            $turn_list = $dbr->select(
+                'fate_game_turn_order',
+                '*',
+                array( 'game_id' => $game_id ),
+                __METHOD__,
+                array( 'ORDER BY' => array( 'is_physical', 'ordinal' ) )
+            );
+            $this->turn_order = array();
+            if ($turn_list->numRows() > 0) {
+                foreach ($turn_list as $turn) {
+                    if (! is_array($this->turn_order[$turn->{is_physical}]) ) {
+                        $this->turn_order[$turn->{is_physical}] = array();
+                    }
+                    $this->turn_order[$turn->{is_physical}][$turn->{ordinal}] = $turn->{skill_id};
+                }
+            }
+            
+            $staff_list = $dbr->select(
+                array( 's' => 'fate_game_staff',
+                       'r' => 'muxregister_register' ),
+                array( 'r.user_name',
+                       'r.user_id',
+                       'r.character_dbref',
+                       'r.canon_name' ),
+                array( 'r.register_id = s.register_id',
+                       's.game_id' => $game_id )
+            );
+            $this->staff = array();
+            if ($staff_list->numRows() > 0) {
+                foreach ($staff_list as $staff) {
+                    $this->staff[$staff->{user_id}] = $staff;
+                }
+            }
+            
             $fractal_list = $dbr->select(
                 array( 'f' => 'fate_fractal',
-                       'r' => 'muxregister_register' ),
+                       'r' => 'muxregister_register',
+                       'p' => 'fate_pending_stat' ),
                 array( 'r.user_name',
                        'r.canon_name',
                        'r.user_id',
@@ -200,13 +242,17 @@ class FateGame {
                        'f.create_date',
                        'f.submit_date',
                        'f.approve_date',
-                       'f.frozen_date' ),
+                       'f.frozen_date',
+                       'pending' => 'p.pending_stat_id' ),
                 array( 'f.game_id' => $game_id ),
                 __METHOD__,
-                array( 'ORDER BY' => array ('fractal_type', 'fractal_name', 'canon_name' ) ),
-                array( 'r' => array( 'LEFT JOIN', 'f.register_id = r.register_id' ) )
+                array( 'GROUP BY' => array ('fractal_id'),
+                       'ORDER BY' => array ('fractal_type', 'fractal_name', 'canon_name' ) ),
+                array( 'p' => array( 'LEFT JOIN', 'f.fractal_id = p.fractal_id' ),
+                       'r' => array( 'LEFT JOIN', 'f.register_id = r.register_id' ) )
             );
             $this->fractals = array();
+            $this->pending_stat_approvals = 0;
             if ($fractal_list->numRows() > 0) {
                 foreach ($fractal_list as $fractal) {
                     $frac = array( 
@@ -217,14 +263,29 @@ class FateGame {
                         'create_date' => $fractal->{create_date},
                         'submit_date' => $fractal->{submit_date},
                         'approve_date' => $fractal->{approve_date},
-                        'frozen_date' => $fractal->{frozen_date}
+                        'frozen_date' => $fractal->{frozen_date},
+                        'pending' => $fractal->{pending}
                     );
                     if (! is_array($this->fractals[$fractal->{fractal_type}])) {
                         $this->fractals[$fractal->{fractal_type}] = array();
                     }
                     $this->fractals[$fractal->{fractal_type}][] = $frac;
+                    if ($fractal->{pending}) {
+                        $this->pending_stat_approvals = 1;
+                    }
                 }
             }
         }
+    }
+    
+    public function is_staff( $user_id ) {
+        $found = false;
+        if ($this->user_id == $user_id) {
+            $found = true;
+        } elseif (array_key_exists($user_id, $this->staff)) {
+            $found = true;
+        }
+        
+        return $found;
     }
 }

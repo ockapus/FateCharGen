@@ -1,0 +1,1381 @@
+# Add to Functions:
+FN_MW_TIMESTAMP: [timefmt($G$m$d$H$M$S, [if(%0, %0, [secs(utc)])])]
+FN_MW_TIMETODATE: [setq(A,[strtrunc(%0,4)])][setq(B,[mid(%0,4,2)])][setq(C,[mid(%0,6,2)])][setq(D,[mid(%0,8,2)])][setq(E,[mid(%0,10,2)])][setq(F,[mid(%0,12,2)])][convsecs([convtime([r(A)]-[r(B)]-[r(C)] [r(D)]:[r(E)]:[r(F)],utc)])]
+FN_SQLESCAPE: [edit(%0,','')]
+
+Add to Cron List:
+@trigger (db of fcco)/tr_cron_character
+@trigger (db of fcco)/tr_cron_game
+
+@create FateChargen Command Object <FCCO>
+@set fcco=inherit
+@set fcco=safe
+
+&db_name fcco=alienc_aliencity
+&tbl_pre fcco=wiki_
+&errors_to fcco=#6
+&colsize fcco=25
+&va fcco= <db # of the jobs database>
+@fo me=&last_fractal_update fcco=[mw_timestamp()]
+@fo me=&last_game_update fcco=[mw_timestamp()]
+@tel [create(Games Database,10)]=fcco
+&vb fcco= <db of games database>
+
+&sql_updated_fractals fcco=select f.fractal_id, f.game_id, f.create_date, f.submit_date, f.approve_date, f.frozen_date, f.update_date, f.fractal_type, f.dbref, r.character_dbref from [u(TBL_PRE)]fate_fractal f left join [u(TBL_PRE)]muxregister_register r on f.register_id = r.register_id where f.fractal_type in ('Character','Setting','Location') and f.update_date > [u(last_fractal_update)];
+
+&sql_fractal_stats fcco=select '%0', f.*, a.is_major from [u(TBL_PRE)]fate_fractal_stat f left join [u(TBL_PRE)]fate_game_aspect a on (f.parent_id = a.game_aspect_id and f.stat_type = 1) where fractal_id = %1;
+
+&sql_updated_games fcco=select g.game_id, g.game_name, g.game_description, g.game_status, g.skill_distribution, g.skill_alternative, g.modified_date, r.character_dbref from [u(TBL_PRE)]fate_game g, [u(TBL_PRE)]muxregister_register r where g.register_id = r.register_id and g.modified_date > [u(last_game_update)];
+
+&sql_game_turn_order fcco=select '%0', t.is_physical, t.ordinal, s.game_skill_label from [u(TBL_PRE)]fate_game_turn_order t, [u(TBL_PRE)]fate_game_skill s where t.skill_id = s.game_skill_id and t.game_id = %1 order by is_physical, ordinal;
+
+&sql_game_staff fcco=select '%0', group_concat(r.character_dbref separator ' ') from [u(TBL_PRE)]fate_game_staff s, [u(TBL_PRE)]muxregister_register r where s.register_id = r.register_id and s.game_id = %1;
+
+&tr_cron_fractal fcco=@query/sql me/tr_updated_fractals=[u(db_name)]/[u(sql_updated_fractals)]
+
+&tr_updated_fractals fcco=
+    @if [rserror()]=
+    {
+        @if [rsrows()]=
+        {
+            @trigger/quiet me/tr_update_single_fractal
+        }
+    },
+    {
+        @mail/quick [u(errors_to)]/Fractal Update Error=MySQL error occurred with fractal update process:%r%r[rserror()]
+    }
+    
+&tr_update_single_fractal fcco=
+    @eval 
+        [setq(0,[extract([rsrec(|)],1,1,|)])]
+        [setq(1,[extract([rsrec(|)],2,1,|)])]
+        [switch([extract([rsrec(|)],8,1,|)],
+            Character,
+            [setq(2,[extract([rsrec(|)],10,1,|)])]
+            [if([not([hasattr(%q2,_fate_stats)])],
+                [setq(3,[create(Stats: %q2,10)])]
+                [tel(%q3,[locate(%vb,Game %q1,iT)])]
+                [set(%q2,_fate_stats:%q3)]
+                [set(%q3,game_id:%q1)]
+                [set(%q3,fractal_id:%q0)]
+                [set(%q3,create_date:[mw_timetodate([extract([rsrec(|)],3,1,|)])])],
+                [setq(3,[u(%q2/_fate_stats)])]
+            )]
+            [if([extract([rsrec(|)],4,1,|)],[set(%q3,submit_date:[mw_timetodate([extract([rsrec(|)],4,1,|)])])])]
+            [if([extract([rsrec(|)],5,1,|)],[set(%q3,approve_date:[mw_timetodate([extract([rsrec(|)],5,1,|)])])])]
+            [if([extract([rsrec(|)],6,1,|)],[set(%q3,frozen_date:[mw_timetodate([extract([rsrec(|)],6,1,|)])])])]
+            ,
+            Setting,
+            [setq(3,[locate(%vb,Game %q1,iT)])],
+            Location,
+            [setq(2,[extract([rsrec(|)],9,1,|)])]
+            [if([strmatch([u(%q2/_fate_stats)],pending)],
+                [setq(3,[create(Location: %q2,10)])]
+                [tel(%q3,[locate(%vb,Game %q1,iT)])]
+                [set(%q2,_fate_stats:%q3)]
+                [set(%q3,game_id:%q1)]
+                [set(%q3,fractal_id:%q0)],
+                [setq(3,[u(%q2/_fate_stats)])]
+            )]
+        )];
+    @if [gt([extract([rsrec(|)],7,1,|)],[u(last_fractal_update)])]=@set/quiet me=last_fractal_update:[extract([rsrec(|)],7,1,|)];
+    @query/sql %#/tr_fractal_stats=[u(db_name)]/[u(sql_fractal_stats,%q3,%q0)];
+    @if [rsnext()]={@trigger/quiet me/tr_update_single_fractal}
+
+&tr_cron_game fcco=@query/sql me/tr_updated_games=[u(db_name)]/[u(sql_updated_games)]
+    
+&tr_updated_games fcco=
+    @if [rserror()]=
+    {
+        @if [rsrows()]=
+        {
+            @trigger/quiet me/tr_update_single_game
+        }
+    },
+    {
+        @mail/quick [u(errors_to)]/Game Update Error=MySQL error occured with game update process:%r%r[rserror()]
+    }
+
+&tr_update_single_game fcco=
+    @eval [if(
+        [not([isdbref([setr(0,[locate(%vb,Game [setr(1,[extract([rsrec(|)],1,1,|)])],iT)])])])],
+        [setq(0,[create(Game [extract([rsrec(|)],1,1,|)],10)])]
+        [set(%q0, game_owner:[extract([rsrec(|)],8,1,|)])]
+        [tel(%q0, %vb)]
+    )];
+    @set/quiet %q0=game_name:[extract([rsrec(|)],2,1,|)];
+    @set/quiet %q0=game_description:[extract([rsrec(|)],3,1,|)];
+    @set/quiet %q0=game_status:[extract([rsrec(|)],4,1,|)];
+    @set/quiet %q0=skill_distribution:[extract([rsrec(|)],5,1,|)];
+    @set/quiet %q0=skill_alternative:[extract([rsrec(|)],6,1,|)];
+    @if [gt([extract([rsrec(|)],7,1,|)],[u(last_game_update)])]=@set/quiet me=last_game_update:[extract([rsrec(|)],7,1,|)];
+    @query/sql %#/tr_game_turn_order=[u(db_name)]/[u(sql_game_turn_order,%q0,%q1)];
+    @query/sql %#/tr_game_staff=[u(db_name)]/[u(sql_game_staff,%q0,%q1)];
+    @if [rsnext()]={@trigger/quiet me/tr_update_single_game}
+   
+
+&tr_game_turn_order fcco=
+    @if [rserror()]=
+    {
+        @if [rsrows()]=
+        {
+            @trigger/quiet me/tr_set_game_turn_order;
+        }
+    },
+    {
+        @mail/quick [u(errors_to)]/Turn Order Update Error=MySQL error occured with turn order query:%r%r[rserror()]
+    }
+
+&tr_set_game_turn_order #425=
+    @eval 
+        [setq(0,[extract([rsrec(|)],1,1,|)])]
+        [setq(1,[if([eq([extract([rsrec(|)],2,1,|)],1)],physical,mental)])]
+        [setq(2,[extract([rsrec(|)],3,1,|)])]
+        [setq(3,[extract([rsrec(|)],4,1,|)])]
+        [if([eq(%q2,1)],
+            [set(%q0,_turn_order_%q1:%q3)],
+            [set(%q0,_turn_order_%q1:[u(%q0/_turn_order_%q1)]|%q3)]
+        )];
+    @if [rsnext()]={@trigger/quiet me/tr_set_game_turn_order}
+
+&tr_game_staff fcco=
+    @if [rserror()]=
+    {
+        @if [rsrows()]=
+        {
+            @eval
+                [setq(0,[extract([rsrec(|)],1,1,|)])]
+                [setq(1,[extract([rsrec(|)],2,1,|)])]
+                [set(%q0,game_staff:%q1)]
+        }
+    },
+    {
+        @mail/quick [u(errors_to)]/Staff Update Error=MySQL error occured with game staff query:%r%r[rserror()]
+    }
+    
+&tr_fractal_stats fcco=
+    @if [rserror()]=
+    {
+        @if [rsrows()]=
+        {
+            @trigger/quiet me/tr_set_fractal_stat;
+        }
+    },
+    {
+        @mail/quick [u(errors_to)]/Fractal Update Error=MySQL error occurred with stat gathering process:%r%r[rserror()]
+    }
+
+&tr_set_fractal_stat fcco=
+    @switch [setq(A,[extract([rsrec(|)],1,1,|)])]
+            [setq(B,[extract([rsrec(|)],2,1,|)])]
+            [setq(C,[extract([rsrec(|)],4,1,|)])]
+            [setq(D,[extract([rsrec(|)],5,1,|)])]
+            [setq(E,[extract([rsrec(|)],6,1,|)])]
+            [setq(F,[extract([rsrec(|)],7,1,|)])]
+            [setq(G,[extract([rsrec(|)],8,1,|)])]
+            [setq(H,[extract([rsrec(|)],9,1,|)])]
+            [setq(I,[extract([rsrec(|)],10,1,|)])]
+            [setq(J,[extract([rsrec(|)],11,1,|)])]
+            [setq(K,[extract([rsrec(|)],16,1,|)])]
+            [setq(Z,[insert([r(Z)],-1,[r(B)],|)])]
+            [r(C)]=
+        1,
+        {
+            @@ Aspects;
+            @set/quiet [r(A)]=aspect_[r(B)]:[r(D)]:[r(E)]:[r(K)];
+        },
+        2,
+        {
+            @@ Skills;
+            @set/quiet [r(A)]=skill_[r(B)]:[r(J)]:[r(D)]:[r(G)];
+        },
+        3,
+        {
+            @@ Stunts;
+            @set/quiet [r(A)]=stunt_[r(B)]:[r(E)]:[r(I)];
+        },
+        4,
+        {
+            @@ Stress;
+            @set/quiet [r(A)]=stress_[r(B)]:[r(D)]:[r(H)]:[r(G)];
+        },
+        6,
+        {
+            @@ Consequence (add Condition Later);
+            @set/quiet [r(A)]=consequence_[r(B)]:[r(F)]:[r(D)]:[r(E)];
+        },
+        7,
+        {
+            @@ Fate Points;
+            @set/quiet [r(A)]=fate_[r(B)]:[r(G)];
+        },
+        8,
+        {
+            @@ Refresh;
+            @set/quiet [r(A)]=refresh_[r(B)]:[r(G)];
+        },
+        9,
+        {
+            @@ Modes;
+            @set/quiet [r(A)]=mode_[r(B)]:[r(E)]:[r(G)];
+        };
+    @if [rsnext()]={
+        @trigger/quiet me/tr_set_fractal_stat
+    },
+    {
+        @dolist [lattr([r(A)])]=
+        {
+            @if [and([isnum([extract(##,2,1,_)])],[not([match([r(Z)],[extract(##,2,1,_)],|)])])]=
+            {
+                @set/quiet [r(A)]=##:;
+            }
+        }
+    }
+
+&cmd_sheet fcco=$+sheet:@pemit %#=[u(display_fate_sheet,%#)]
+&cmd_sheet2 fcco=$+sheet *:@pemit %#=[u(display_fate_sheet,%0)]
+
+&display_fate_sheet fcco=
+    [switch(
+        [hasattr(%#,Guest)]
+        [not([isdbref([num(*%0)])])]
+        [not([hasattr([num(*%0)],_fate_stats)])]
+        [or(
+            [hasflag(%#,Wizard)],
+            [strmatch(%#,%0)],[strmatch(%#,[num(*%0)])],
+            [u(fn_can_staff,[loc([u([num(*%0)]/_fate_stats)])])]
+        )]
+        ,
+        1*,
+        [fatepref()] This command not available to guests.,
+        01*,
+        [fatepref()] %0 could not be found.,
+        001*,
+        [fatepref()] [name([num(*%0)])] does not appear to have stats set.,
+        0000,
+        [fatepref()] You do not have permission to view [name([num(*%0)])]'s sheet.,
+        [setq(0,[num(*%0)])]
+        [setq(1,[u([r(0)]/_fate_stats)])]
+        [header([name([r(0)])]'s Stats)]%r
+        [u(display_summary,[r(1)])]%r
+        [u(display_aspect,[r(1)])]%r
+        [u(display_skill,[r(1)])]%r
+        [u(display_stunt,[r(1)])]%r
+        [u(display_consequence,[r(1)])]%r
+        [u(display_stress,[r(1)])]%r
+        [footer()]
+    )]
+   
+&display_summary fcco=
+    [rjust(Game:%b,[u(colsize)])][if([isdbref([setr(g,[locate(%vb,Game [u(%0/game_id)],iT)])])],[u(%qg/game_name)],UNKNOWN)]%r
+    [rjust(Status:%b,[u(colsize)])][u(display_status,%0)]%r
+    [rjust(Fate Refresh:%b,[u(colsize)])][u(%0/[lattr(%0/refresh_*)])]
+    [rjust(Current Fate Points:%b,40)][u(%0/[lattr(%0/fate_*)])]
+    
+&display_status fcco=
+    [switch(
+        [hasattr(%0,frozen_date)]
+        [hasattr(%0,approve_date)]
+        [hasattr(%0,submit_date)],
+        1*,
+        Frozen on [u(%0/frozen_date)],
+        01*,
+        Approved on [u(%0/approve_date)],
+        001,
+        Submitted on [u(%0/submit_date)],
+        Created on [u(%0/create_date)]
+    )]
+   
+&display_stress fcco=
+    [subheader(Stress Tracks)]%r
+    [iter([sortby(sort_stresses,[iter([lattr(%0/stress_*)],[u(%0/##)], ,|)],|,|)],
+        [rjust([extract(##,1,1,:)]:%b,[u(colsize)])][repeat(%xc%[%xnX%xc%]%xn%b,[extract(##,3,1,:)])]
+        [repeat(%xc%[ %]%xn%b,[sub([extract(##,2,1,:)],[extract(##,3,1,:)])])],
+        |,%r
+    )]
+    
+&sort_stresses fcco=
+    [comp(%0,%1)]
+   
+&display_consequence fcco=
+    [subheader(Consequences)]%r
+    [iter([sortby(sort_consequences,[iter([lattr(%0/consequence_*)],[u(%0/##)], ,|)],|,|)],
+        [rjust(%(-[extract(##,1,1,:)]%) [extract(##,2,1,:)]:%b,[u(colsize)])][extract(##,3,1,:)],
+        |,%r
+    )]
+    
+&sort_consequences fcco=
+    [if([eq([extract(%0,1,1,:)],[extract(%1,1,1,:)])],
+        [if([regmatch([extract(%0,2,1,:)],^[extract(%1,2,1,:)]$)],
+            [comp([extract(%0,3,1,:)],[extract(%1,3,1,:)])],
+            [comp([extract(%0,2,1,:)],[extract(%1,2,1,:)])]
+        )],
+        [comp([extract(%0,1,1,:)],[extract(%1,1,1,:)])]
+    )]
+   
+&display_stunt fcco=
+    [subheader(Stunts)]%r
+    [iter([sortby(sort_stunts,[iter([lattr(%0/stunt_*)],[u(%0/##)], ,|)],|,|)],
+        %b%xh[eval([extract([escape(##)],1,1,:)])]%xn%r[space(6)][rightcol([extract([escape(##)],2,1,:)],6)],
+        |,%r
+    )]
+    
+&sort_stunts fcco=
+    [comp(%0,%1)]
+   
+&display_aspect fcco=
+    [subheader(Aspects)]%r
+    [iter([sortby(sort_aspects,[iter([lattr(%0/aspect_*)],[u(%0/##)], ,|)],|,|)],
+        [if([strlen([extract(##,1,1,:)])],[rjust([extract(##,1,1,:)]:%b,[u(colsize)])],[space([u(colsize)])])][extract(##,2,1,:)],
+        |,%r
+    )]
+    
+&sort_aspects fcco=
+    [switch(
+        [isnum([extract(%0,3,1,:)])][isnum([extract(%1,3,1,:)])],
+        01,
+        1,
+        10,
+        -1,
+        [switch(
+            [gt([strlen([extract(%0,1,1,:)])],0)][gt([strlen([extract(%1,1,1,:)])],0)],
+            01,
+            1,
+            10,
+            -1,
+            11,
+            [comp([extract(%0,1,1,:)],[extract(%1,1,1,:)])],
+            [comp([extract(%0,2,1,:)],[extract(%1,2,1,:)])]
+        )]
+    )]
+
+&display_skill fcco=
+    [subheader([u([locate(%vb,Game [u(%0/game_id)],iT)]/skill_alternative)])]%r
+    [switch([u([locate(%vb,Game [u(%0/game_id)],iT)]/skill_distribution)],
+        3,[u(display_mode,%0)],
+        4,[u(display_approach,%0)],
+        [u(display_column,%0)]
+    )]
+ 
+&display_column fcco=
+    [setq(r,0)]
+    [setq(f,1)]
+    [iter([sortby(sort_columns,[iter([lattr(%0/skill_*)],[u(%0/##)], ,|)],|,|)],
+        [if([neq([extract(##,3,1,:)],%qr)],
+            [if(%qf,
+                [setq(f,0)],
+                [rightcol([escape(%qs)],[u(colsize)],|,%,%b)]%r
+            )]
+            [setq(s,)]
+            [setq(r,[extract(##,3,1,:)])]
+            [rjust([fateladder(%qr,1)]:%b,[u(colsize)])]
+        )]
+        [setq(s,[if(%qs,[edit(%qs,$,|)])][extract(##,2,1,:)])],
+        |,@@
+    )]
+    [if(%qs,[rightcol([escape(%qs)],[u(colsize)],|,%,%b)])]
+    
+&display_approach fcco=
+    [iter([sortby(sort_approaches,[iter([lattr(%0/skill_*)],[u(%0/##)], ,|)],|,|)],
+        [rjust([extract(##,2,1,:)]:%b,[u(colsize)])][fateladder([extract(##,3,1,:)],1)],
+        |,%r
+    )]
+    
+&display_mode fcco=
+    [iter([sortby(sort_modes,[iter([lattr(%0/mode_*)],[u(%0/##)]:[extract(##,2,1,_)], ,|)],|,|)],
+        [rjust([fateladder([extract(##,2,1,:)],1)] [extract(##,1,1,:)]:%b,[u(colsize)])]
+        [rightcol([escape([u(display_mode_skills,%0,[extract(##,3,1,:)])])],[u(colsize)],|,%,%b)],
+        |,%r
+    )]
+    
+&display_mode_skills fcco=
+    [iter([sortby(sort_mode_skills,[iter([u(get_mode_skills,%0,%1)],[u(%0/##)], ,|)],|,|)],
+        [extract(##,2,1,:)] +[extract(##,3,1,:)],
+        |,|
+    )]
+
+&get_mode_skills fcco=
+    [trim([iter([lattr(%0/skill_*)],[if([strmatch(%1,[extract([u(%0/##)],1,1,:)])],##)])])]
+    
+&sort_approaches fcco=
+    [comp([extract(%0,2,1,:)],[extract(%1,2,1,:)])]
+    
+&sort_modes fcco=
+    [setq(2,[extract(%0,2,1,:)])][setq(3,[extract(%1,2,1,:)])]
+    [if(
+        [gt([r(2)],[r(3)])],-1,
+        [if(
+            [gt([r(3)],[r(2)])],1,0
+        )]
+    )]
+    
+&sort_columns fcco=
+    [setq(2,[extract(%0,3,1,:)])][setq(3,[extract(%1,3,1,:)])]
+    [if(
+        [gt(%q2,%q3)],-1,
+        [if(
+            [gt(%q3,%q2)],1,
+            [comp([extract(%0,2,1,:)],[extract(%1,2,1,:)])]
+        )]
+    )]
+
+&sort_mode_skills fcco=
+    [setq(4,[extract(%0,3,1,:)])][setq(5,[extract(%1,3,1,:)])]
+    [if(
+        [gt([r(4)],[r(5)])],-1,
+        [if(
+            [gt([r(5)],[r(4)])],1,0
+        )]
+    )]
+    
+&cmd_games fcco=$+games:
+    @pemit %#=
+        [header(Registered Fate Games)]%r
+        %xc[ljust(Game#,5)]%b[ljust(Name,30)]%b[ljust(Status,24)]%b[ljust(Owner,15)]%xn%r
+        [divider()]%r
+        [iter([sort([lcon(%vb)])],
+            [rjust(#@,5)]%b[ljust([u(##/game_name)],30)]%b[ljust([u(##/game_status)],24)]%b[ljust([name([u(##/game_owner)])],15)],
+            %b,%r
+        )]
+        %r[footer(+game # to view specific details)]
+        
+&cmd_game fcco=$+game *:
+    @pemit %#=[switch(
+        [and([isint(%0)],[gt(%0,0)],[lte(%0,[words([lcon(%vb)])])])],
+        1,
+        [setq(0,[extract([sort([lcon(%vb)])],%0,1)])]
+        [header(+game: [u(%q0/game_name)])]%r
+        [rjust(Owner:%b,[u(colsize)])][name([u(%q0/game_owner)])]%r
+        [rjust(Staff:%b,[u(colsize)])][sort([iter([u(%q0/game_staff)],[name(##)],%b,|)],a,|,%,%b)]%r
+        [rjust(Description:%b,[u(colsize)])][rightcol([escape([u(%q0/game_description)])],[u(colsize)])]%r
+        [rjust(Status:%b,[u(colsize)])][u(%q0/game_status)]%r
+        [if([lattr(%q0/aspect_*)], 
+            [subheader(Game Aspects)]%r
+            [iter([sortby(sort_aspects,[iter([lattr(%q0/aspect_*)],[u(%q0/##)], ,|)],|,|)],
+                [if([strlen([extract(##,1,1,:)])],[rjust([extract(##,1,1,:)]:%b,[u(colsize)])],[space([u(colsize)])])][extract(##,2,1,:)],
+                |,%r
+            )]
+            %r
+        )]
+        [footer()]
+        ,
+        [fatepref()] Invalid game #. Must be between 1 and [words([lcon(%vb)])].
+    )]
+    
+@@ Help for +games
+    
++info/add +help/games=Help on +games/%b%b+games%r%b%b+game <#>%r%rThe first command lists all currently configured FATE games, their status, and the character who is considered that game's owner. The second command shows more details about that specific game, including the description, any assistant staff that have authority to help run things, and a list of the current game-level aspects.
+
+&cmd_location/register fcco=$+location/register *:
+    @eval
+        [switch(
+            [isdbref([setr(0,[u(fn_find_game,%0)])])]
+            [u(fn_can_staff,[extract([name(%q0)],2,1)],%#)]
+            [not([hasattr([loc(%#)],_fate_stats)])],
+            0*,[pemit(%#,[fatepref()] Can't find game %0)],
+            10*,[pemit(%#,[fatepref()] You don't have permission to claim a location for [u(%q0/game_name)].)],
+            110,[pemit(%#,[fatepref()] This location appears to already be registered.)],
+            {
+                [sql([u(sql_register_location,[loc(%#)],[extract([name(%q0)],2,1)])])]
+                [set([loc(%#)],_fate_stats:pending)]
+                [pemit(%#,[fatepref()] [name([loc(%#)])] registered to game [u(%q0/game_name)].)]
+            }
+        )]
+        
+&cmd_location fcco=$+location:
+    @pemit %#=[switch(
+        [hasattr([loc(%#)],_fate_stats)]
+        [isdbref([setr(0,[u([loc(%#)]/_fate_stats)])])],
+        0*,[fatepref()] This location doesn't seem to be registered to any game.,
+        10,[fatepref()] First stat update still pending for this location%, please check again momentarily.,
+        {
+            [header(+location: [name([loc(%#)])])]%r
+            [rjust(Game:%b,[u(colsize)])][u([locate(%vb,Game [u(%q0/game_id)],iT)]/game_name)]%r
+            [if([lattr(%q0/aspect_*)],
+                [subheader(Location Aspects)]%r
+                [iter([sortby(sort_aspects,[iter([lattr(%q0/aspect_*)],[u(%q0/##)], ,|)],|,|)],
+                    [if([strlen([extract(##,1,1,:)])],[rjust([extract(##,1,1,:)]:%b,[u(colsize)])],[space([u(colsize)])])][extract(##,2,1,:)],
+                    |,%r
+                )]
+                %r
+            )]
+            [footer()]
+        }
+    )]
+    
+&cmd_location/clear fcco=$+location/clear:
+    @pemit %#=
+        [switch([hasattr([loc(%#)],_fate_stats)],
+            1,[fatepref()] Are you certain you want to clear this location? This will destroy the associated fractal and all assigned aspects. If so%, please use "+location/clear confirm".,
+            [fatepref()] This location doesn't appear to be registered.
+        )]
+
+&cmd_location/clear_confirm fcco=$+location/clear confirm:
+    @eval
+        [switch(
+            [hasattr([loc(%#)],_fate_stats]
+            [isdbref([setr(0,[u([loc(%#)]/_fate_stats)])])]
+            [or([u(fn_can_staff([u(%q0/game_id)])],[hasflag(%#,WIZARD)])],
+            0*,[fatepref()] This location doesn't seem to be registered to any game.,
+            10*,[fatepref()] First stat update still pending for this location%, please check again momentarily.,
+            110,[fatepref()] You must either have staff permission for [u([locate(%vb,Game [u(%q0/game_id)],iT)]/game_name)] or be a Wizard to clear a registered +location.,
+            {
+                [sql([u(sql_delete_stats,[u(%q0/fractal_id)])])]
+                [sql([u(sql_delete_fractal,[u(%q0/fractal_id)])])]
+                [destroy(%q0)]
+                [set([loc(%#)],_fate_stats:)]
+                [pemit(%#,[fatepref()] [name([loc(%#)])] has been unregistered as a game +location.)]
+            }
+        )]
+        
+@@ Help file for +location command
+
++info/add +help/location=Help on +location/%b%b+location%r%b%b+location/register <# or game name>%r%b%b+location/clear%r%rThe first command, +location, supplies information about a room on the mush if it has been registered. If it has, then it will show which game the room has been registered as belonging to, and any assigned aspects relevant to that location.%r%rThe second command, +location/register, binds a room as belonging to the specified game. One must have staff permission for the specific game for this to work. Once registered, a fractal attached to the room will be created, and staff can edit the aspects for that location through the usual interface on the wiki.%r%rThe final command, +location/clear, is used to unregister a room. Only staff for the game that owns that room, or a site wizard, can use this command. Please note that all stats associated with the room and its associated fractal will be deleted, and cannot be recovered, so use this with caution.
+ 
+
+&cmd_situation/set fcco=$+situation/set *=*:
+    @eval
+        [switch(%0,
+            me,
+                [set(%#,_situation_[mw_timestamp()]:%1)]
+                [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] set "%1" as a Situational Aspect on themselves.)],
+            here,
+                [set([loc(%#)],_situation_[mw_timestamp()]:%1)]
+                [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] set "%1" as a Situational Aspect on this location.)],
+            npc:*,
+                [set([loc(%#)],_npc_situation_[mw_timestamp()]:[extract(%0,2,1,:)]:%1)]
+                [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] set "%1" as a Situational Aspect on the NPC "[extract(%0,2,1,:)]".)],
+            [if([and([isdbref([setr(0,[locate(%#,%0,n)])])],[hasflag(%q0,CONNECT)])],
+                [set(%q0,_situation_[mw_timestamp()]:%1)]
+                [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] set "%1" as a Situational Aspect on [name(%q0)].)],
+                [pemit(%#,[fatepref()] Can't find %0.)]
+            )]
+        )]
+        
+&cmd_situation/clear fcco=$+situation/clear *=*:
+    @eval
+        [switch(%0,
+            me,
+                [if([setr(0,[extract([sort([lattr(%#/_situation*)])],%1,1)])],
+                    [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] cleared "[u(%#/%q0)]" as a Situational Aspect on themselves.)]
+                    [set(%#,%q0:)],
+                    [pemit(%#,[fatepref()] Couldn't find a corresponding Aspect to clear.)]
+                )],
+            here,
+                [if([setr(0,[extract([sort([lattr([loc(%#)]/_situation*)])],%1,1)])],
+                    [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] cleared "[u([loc(%#)]/%q0)]" as a Situational Aspect on this location.)]
+                    [set([loc(%#)],%q0:)],
+                    [pemit(%#,[fatepref()] Couldn't find a corresponding Aspect to clear.)]
+                )],
+            npc:*,
+                [if([setr(0,[filter(filter_npc_match,[sortby(sort_npc_situation,[iter([lattr([loc(%#)]/_npc_situation*)],##:[u([loc(%#)]/##)],%b,|)],|,|)],|,|,[extract(%0,2,1,:)])])],
+                    [if([setr(1,[extract(%q0,%1,1,|)])],
+                        [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] cleared "[extract(%q1,3,1,:)]" as a Situational Aspect on the NPC "[extract(%q1,2,1,:)]".)]
+                        [set([loc(%#)],[extract(%q1,1,1,:)]:)],
+                        [pemit(%#,[fatepref()] Couldn't find a corresponding Aspect to clear.)]
+                    )],
+                    [pemit(%#,[fatepref()] Couldn't find any Aspects for an NPC named "[extract(%0,2,1,:)]".)]
+                )],
+            [if([and([isdbref([setr(0,[locate(%#,%0,n)])])],[hasflag(%q0,CONNECT)])],
+                [if([setr(1,[extract([sort([lattr(%q0/_situation*)])],%1,1)])],
+                    [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] cleared "[u(%q0/%q1)]" as a Situational Aspect on [name(%q0)].)]
+                    [set(%q0,%q1:)],
+                    [pemit(%#,[fatepref()] Couldn't find a corresponding Aspect to clear.)]
+                )],
+                [pemit(%#,[fatepref()] Can't find %0.)]
+            )]
+        )]
+        
+&cmd_situation/reset fcco=$+situation/reset:
+    @eval
+        [iter([lcon([loc(%#)],PLAYER)],
+            [iter([lattr(##/_situation*)],[set([itext(1)],[itext(0)]:)],%b,@@)],
+            %b,@@
+        )]
+        [iter([lattr([loc(%#)]/_situation*)],[set([loc(%#)],##:)],%b,@@)]
+        [iter([lattr([loc(%#)]/_npc_situation*)],[set([loc(%#)],##:)],%b,@@)]
+        [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] has cleared all nearby Situational Aspects.)]
+        
+&filter_npc_match fcco=[strmatch([extract(%0,2,1,:)],%1*)]
+        
+&cmd_situation fcco=$+situation:
+    @pemit %#=
+        [setq(0,0)]
+        [header(Situational Aspects)]%r
+        [if([lattr([loc(%#)]/_situation*)],
+            [setq(0,1)]
+            [subheader(Location)]%r
+            [iter([sort([lattr([loc(%#)]/_situation*)])],
+                [rjust(#@:%b,5)][u([loc(%#)]/##)],%b,%r
+            )]%r
+        )]
+        [iter([lcon([loc(%#)],CONNECT)],
+            [if([lattr(##/_situation*)],
+                [setq(0,1)]
+                [subheader(Player: [name(##)])]%r
+                [iter([sort([lattr(##/_situation*)])],
+                    [rjust([inum(0)]:%b,5)][u([itext(1)]/[itext(0)])],%b,%r
+                )]%r
+            )],
+            %b,@@
+        )]
+        [if([lattr([loc(%#)]/_npc_situation*)],
+            [setq(0,1)]
+            [setq(1,)]
+            [iter([sortby(sort_npc_situation,[iter([lattr([loc(%#)]/_npc_situation*)],##:[u([loc(%#)]/##)],%b,|)],|,|)],
+                [if([not([strmatch(%q1,[extract(##,2,1,:)])])],
+                    [setq(1,[extract(##,2,1,:)])]
+                    [setq(2,1)]
+                    [subheader(NPC: %q1)]%r
+                )]
+                [rjust(%q2:%b,5)][extract(##,3,1,:)][setq(2,[add(%q2,1)])],
+                |,%r
+            )]%r
+        )]
+        [if([not(%q0)],%b%bNo Situational Aspects found currently in this location.%r)]
+        [footer()]
+ 
+&sort_npc_situation fcco=
+    [if([strmatch([extract(%0,2,1,:)],[extract(%1,2,1,:)])],
+        [comp([extract(%0,1,1,:)],[extract(%1,1,1,:)])],
+        [comp([extract(%0,2,1,:)],[extract(%1,2,1,:)])]
+    )]
+    
+@@ Help file for +situation command
+
++info/add +help/situation=Help on +situation/%b%b+situation%r%b%b+situation/set <target>=<aspect>%r%b%b+situation/clear <target>=<#>%r%b%b+situation/reset%r%rThis series of commands allows players to keep track of situational, or temporary, aspects during the course of play.%r%rWith no arguments, +situation displays all situational aspects set on the location, any connected players, and any NPCs that may have aspects set on them currently as well.%r%r+situation/set allowed someone to set a new Aspect. Valid targets are: me, here, the name of a local player, or npc:<name>. This npc name is entirely arbitrary, but must match exactly for aspects set on the same NPC to group up correctly when viewed with +situation.%r%r+situation/clear will remove a currently set aspect. It uses the same list of possible targets as +situation/set, while also expecting a number that corresponds to the numbers displayed by +situation.%r%rThe final command, +situation/reset, will clear all currently set Situational Aspects when a scene is finished or a new scene is beginning.
+
+&cmd_alts fcco=$+alts *:
+    @pemit %#=
+        [switch(
+            [isdbref([setr(0,[num(*%0)])])]
+            [hasattr(%q0,wiki_name)],
+            0*,[fatepref()] Couldn't find %0.,
+            10,[fatepref()] [name(%0)] isn't registered%; can't determine alts.,
+            {
+                [header(+alts)]%r
+                %b%b[ljust(Characters,22)][ljust(Game,44)][ljust(Status,10)]%r
+                [divider()]%r
+                [iter([sort([search(eplayer=%[strmatch(%[u(%q0/wiki_name)%],%[u(##/wiki_name)%])%])])],
+                    %b%b[ljust([name(##)],20)]%b%b
+                    [if([hasattr(##,_fate_stats)],
+                        [ljust([u([locate(%vb,Game [u([setr(1,[u(##/_fate_stats)])]/game_id)],iT)]/game_name)],44)]
+                        [switch(
+                            [hasattr(%q1,frozen_date)]
+                            [hasattr(%q1,approve_date)]
+                            [hasattr(%q1,submit_date)],
+                            1*,Frozen,
+                            01*,Approved,
+                            001,Submitted,
+                            Created
+                        )]
+                    )],
+                    %b,%r
+                )]%r
+                [footer()]
+            }
+        )]
+
++info/add +help/alts=Help on +alts/%b%b+alts <player>%r%rDisplays a list of all characters registered to the same wiki name (and thus presumably played by the same player) as the named player. If any of those characters are registered to FATE games, it will display the game they belong to and their current approval status as well.        
+ 
+&sql_delete_stats fcco=delete from [u(TBL_PRE)]fate_fractal_stat where fractal_id=%0;
+
+&sql_delete_fractal fcco=delete from [u(TBL_PRE)]fate_fractal where fractal_id=%0;        
+        
+&sql_register_location fcco=insert into [u(TBL_PRE)]fate_fractal (fractal_name, game_id, dbref, fractal_type, is_private, create_date, update_date) values ('[sqlescape([name(%0)])]', %1, '%0', 'Location', 0, '[mw_timestamp()]', '[mw_timestamp()]');
+        
+&sql_fractal_update fcco=update [u(TBL_PRE)]fate_fractal set update_date=[mw_timestamp()] where fractal_id=%0;    
+    
+&sql_fate_spend fcco=update [u(TBL_PRE)]fate_fractal_stat set stat_value=stat_value - 1, modified_date=[mw_timestamp()] where fractal_stat_id = %0;
+
+&sql_stress_update fcco=update [u(TBL_PRE)]fate_fractal_stat set stat_value=%0, modified_date=[mw_timestamp()] where fractal_stat_id=%1;
+
+&sql_consequence_update fcco=update [u(TBL_PRE)]fate_fractal_stat set stat_field='%0', modified_date = [mw_timestamp()] where fractal_stat_id=%1;
+
+&cmd_init/declare fcco=$+init/declare *:
+    @eval
+        [if(
+            [regmatchi(%0,^(%[a-z%]+)(=(.+))?$,-1 0 -1 1)],
+            [switch(
+                [or([strmatch(physical,%q0*)],[strmatch(mental,%q0*)])]
+                [if(%q1,[isdbref([setr(2,[u(fn_find_game,%q1)])])],1)]
+                [if([not(%q1)],[isdbref([setr(2,[loc([u([loc(%#)]/_fate_stats)])])])],1)]
+                [not([hasattr([loc(%#)],_init_game)])],
+                0*,[pemit(%#,[fatepref()] Must declare conflict as either physical or mental.)],
+                10*,[pemit(%#,[fatepref()] Can't find game %q1.)],
+                110*,[pemit(%#,[fatepref()] This location doesn't appear to be registered. Must specify a game when declaring initiative.)],
+                1110,[pemit(%#,[fatepref()] Initiative already declared here.)],
+                {
+                    [set([loc(%#)],_init_game:%q2)]
+                    [set([loc(%#)],_init_type:[if([strmatch(physical,%q0*)],physical,mental)])]
+                    [pemit([lcon([loc(%#)])],[fatepref()] Initiative declared for [u(%q2/game_name)]%, Conflict: [capstr([u([loc(%#)]/_init_type)])].)]
+                }
+            )],
+            [pemit(%#,[fatepref()] Syntax error. Please check +help init.)]
+        )]
+
+&cmd_init/add fcco=$+init/add *=*:
+    @eval
+        [switch(
+            [hasattr([loc(%#)],_init_game)]
+            [isint(%1)]
+            [ladd([iter([lattr([loc(%#)]/_init_npc_*)],[strmatch([extract([u([loc(%#)]/##)],1,1,:)],%0)])])]
+            [ladd([iter([lattr([loc(%#)]/_init_npc_*)],[strmatch([extract([u([loc(%#)]/##)],2,1,:)],%1)])])],
+            0*,[pemit(%#,[fatepref()] Initiative has not yet been declared here.)],
+            10*,[pemit(%#,[fatepref()] Must declare a numerical position in the turn order.)],
+            111*,[pemit(%#,[fatepref()] An NPC with that name is already declared in the turn order.)],
+            1101,[pemit(%#,[fatepref()] An NPC is already declared at that position in the turn order.)],
+            {
+                [set([loc(%#)],_init_npc_[mw_timestamp()]:%0:%1)]
+                [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] adds %0 to the initiative turn order.)]
+            }
+        )]
+        
+&cmd_init/del fcco=$+init/del *:
+    @eval
+        [switch(
+            [hasattr([loc(%#)],_init_game)]
+            [setq(1,[ladd([iter([lattr([loc(%#)]/_init_npc_*)],[if([strmatch([extract([u([loc(%#)]/##)],1,1,:)],%0*)],[setq(0,##)]1,0)])])])]
+            [if([eq(%q1,0)],0,1)]
+            [if([gt(%q1,1)],0,1)],
+            0*,[pemit(%#,[fatepref()] Initiative has not yet been declared here.)],
+            10*,[pemit(%#,[fatepref()] Couldn't find a match for %0.)],
+            110,[pemit(%#,[fatepref()] Found too many matches for %0; please be more specific.)],
+            {
+                [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] removes [extract([u([loc(%#)]/%q0)],1,1,:)] from the initiative turn order.)]
+                [set([loc(%#)],%q0:)]
+            }
+        )]
+          
+&cmd_init/join fcco=$+init/join:
+    @eval
+        [switch(
+            [hasattr([loc(%#)],_init_game)]
+            [hasattr(%#,_fate_stats)]
+            [neq([u([setr(0,[u([loc(%#)]/_init_game)])]/skill_distribution)],3)]
+            [hasattr(%q0,_turn_order_[u([loc(%#)]/_init_type)])]
+            [not([hasattr([loc(%#)],_init_pc_%#)])],
+            0*,[pemit(%#,[fatepref()] Initiative has not yet been declared here.)],
+            10*,[pemit(%#,[fatepref()] You don't appear to have stats.)],
+            110*,[pemit(%#,[fatepref()] Initiative declared for a game that uses modes. Please use +init/roll <mode> to join turn order.)],
+            1110*,[pemit(%#,[fatepref()] Turn order for [u([loc(%#)]/_init_type)] conflicts not properly configured for this game.)],
+            11110,[pemit(%#,[fatepref()] You have already joined the turn order.)],
+            {
+                [setq(1,[u(%#/_fate_stats)])]
+                [set([loc(%#)],_init_pc_%#:
+                    [iter([u(%q0/_turn_order_[u([loc(%#)]/_init_type)])],
+                        [setq(2,0)]
+                        [iter([lattr(%q1/skill_*)],
+                            [if([strmatch([itext(1)],[extract([u(%q1/[itext(0)])],2,1,:)])],[setq(2,[extract([u(%q1/[itext(0)])],3,1,:)])])],
+                            %b,@@
+                        )]
+                        %q2,
+                        |,|
+                    )]
+                )]
+                [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] joined the initiative turn order.)]
+            }
+        )]
+            
+&cmd_init/roll fcco=$+init/roll *:
+    @eval
+        [switch(
+            [hasattr([loc(%#)],_init_game)]
+            [not([hasattr([loc(%#)],_init_pc_%#)])]
+            [eq([u([setr(0,[u([loc(%#)]/_init_game)])]/skill_distribution)],3)]
+            [setq(2,0)]
+            [setq(3,)]
+            [iter([lattr([setr(1,[u(%#/_fate_stats)])]/mode_*)],
+                [if([strmatch([extract([u(%q1/##)],1,1,:)],%0*)],[setq(2,[add(%q2,1)])][setq(3,##)])],
+                %b,@@
+            )]
+            [neq(%q2,0)]
+            [not([gt(%q2,1)])],
+            0*,[pemit(%#,[fatepref()] Initiative has not yet been declared here.)],
+            10*,[pemit(%#,[fatepref()] You have already joined the turn order.)],
+            110*,[pemit(%#,[fatepref()] Initiative declared for a game that doesn't use modes. Please use +init/join to join turn order.)],
+            1110*,[pemit(%#,[fatepref()] Did not find a match for mode %0)],
+            11110,[pemit(%#,[fatepref()] Too many matches found for %0. Please be more specific.)],
+            {
+                [setq(4,[extract([u(%q1/%q3)],2,1,:)])]
+                [setq(5,[iter([lrand(-1,1,4)],{[setq(4,[add(%q4,##)])]%[[switch(##,1,+,-1,-,%b)]%] })])]
+                [set([loc(%#)],_init_pc_%#:%q4)]
+                [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] rolled [extract([u(%q1/%q3)],1,1,:)] (+[extract([u(%q1/%q3)],2,1,:)]) and %q5 to join the initiative turn order at [fateladder(%q4,1)].)]
+            }
+        )]
+
+&cmd_init fcco=$+init:
+    @pemit %#=
+        [setq(0,[u([loc(%#)]/_init_game)])]
+        [if([isdbref(%q0)],
+            [setq(1,[u([loc(%#)]/_init_type)])]
+            [setq(2,[sortby(sort_init,[iter([lattr([loc(%#)]/_init_pc_*)],##:[u([loc(%#)]/##)])])])]
+            [setq(3,[sortby(sort_init_npc,[iter([lattr([loc(%#)]/_init_npc_*)],##:[u([loc(%#)]/##)])])])]
+            [iter(%q3,
+                [if([lte([extract(##,3,1,:)],[words(%q2)])],
+                    [setq(2,[insert(%q2,[extract(##,3,1,:)],##)])],
+                    [setq(2,[insert(%q2,[add([words(%q2)],1)],##)])]
+                )],
+                %b,@@
+            )]
+            [header(+init)]%r
+            [center(Turn Order for [u(%q0/game_name)] | Conflict: [capstr(%q1)],78)]%r
+            [subheader()]%r
+            [iter(%q2,
+                [rjust(#@.,5)]%b
+                [if([strmatch(##,*_pc_*)],
+                    [name([extract([extract(##,1,1,:)],4,1,_)])],
+                    [extract(##,2,1,:)] (NPC)
+                )],
+                %b,%r
+            )]%r
+            [footer()],
+            [fatepref()] Initiative has not yet been declared here.
+        )]
+
+&cmd_init/clear fcco=$+init/clear:
+    @pemit %#=[fatepref()] Once initiative is cleared, it cannot be recovered. If you're sure, please type: +init/clear confirm
+
+&cmd_init/clear_confirm fcco=$+init/clear confirm:
+    @eval
+        [iter([lattr([loc(%#)]/_init_*)],
+            [set([loc(%#)],##:)],
+            %b,@@
+        )]
+        [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] has cleared the initiative turn order.)]
+ 
+&sort_init fcco=[comp([extract(%1,2,1,:)],[extract(%0,2,1,:)])]
+            
+&sort_init_npc fcco=[comp([extract(%0,3,1,:)],[extract(%1,3,1,:)])]   
+ 
+@@ Help file for +init
+
++info/add +help/init=Help on +init/This set of commands helps to manage and keep track of turn order for combat scenes and other conflicts. The simplest form, +init, will show the complete turn order list once initiative has been declared. The options are:%r%r%b%bGetting started: +init/declare <type> %[=<game>%]%r%rThis command declares the beginning of initiative for a location, and must be used before any of the other commands. <type> must be either physical or mental, to determine the type of conflict about to begin. If a location has been registered as belonging to a specific game, then that game's initiative rules will be used. Otherwise, you will also need to specify which game applies, either by number (matching the +games list) or name.%r%r%b%bJoining Turn Order:%r%b%b+init/join%r%b%b+init/roll <mode>%r%b%b+init/add <npc>=<position>%r%b%b+init/del <npc>%r%rOnce initiative has been declared, then characters and NPCs can be added to the turn order. If playing a game using the Mode skill system, then turn order is determined by rolling one of your applicable modes with +init/roll. Please check with whoever is running the combat to make sure the mode you want to roll is applicable. In all other games, no rolling is required and +init/join should be used instead.%r%rNPCs can be added by anyone to the turn order by supplying a name and a specific position on the list. Once removed from the combat, NPCs can also be removed with the +init/del command to keep the turn order easier to follow.%r%r%b%bCleaning up: +init/clear%r%rOnce a conflict is finished, +init/clear will clean everything up and leave a location ready a new initiative to be declared at a later date.
+  
+&cmd_stress/check fcco=$+stress/check *=*:
+    @eval
+        [if(
+            [regmatchi(%1,^(%[0-9%]+)( to job (%[0-9%]+))?$,-1 0 -1 1)],
+            [switch(
+                [isnum([if([isint(%q1)],[u(fn_can_post_job,%#,%q1)],1)])]
+                [hasattr(%#,_fate_stats)]
+                [if([setr(3,[u(fn_find_stress,[setr(2,[u(%#/_fate_stats)])],%0)])],1,0)]
+                [gte([sub([extract([u(%q2/%q3)],2,1,:)],[extract([u(%q2/%q3)],3,1,:)])],%q0)],
+                0*,[pemit(%#,[fatepref()] [u(fn_can_post_job,%#,%q1)])],
+                10*,[pemit(%#,[fatepref()] You don't appear to have stats.)],
+                110*,[pemit(%#,[fatepref()] Can't find a matching Stress Track for %0)],
+                1110,[pemit(%#,[fatepref()] You don't have enough free boxes to check off %q0 for that Stress Track.)],
+                {
+                    [set(%q2,%q3:[extract([u(%q2/%q3)],1,2,:)]:[setr(4,[add([extract([u(%q2/%q3)],3,1,:)],%q0)])])]
+                    [sql([u(sql_stress_update,%q4,[extract(%q3,2,1,_)])])]
+                    [sql([u(sql_fractal_update,[u(%q2/fractal_id)])])]
+                    [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] checked %q0 box[if([gt(%q0,1)],es)] on their [extract([u(%q2/%q3)],1,1,:)] Stress Track.)]
+                    [if([isint(%q1)],
+                        [trigger(%va/TRIG_ADD,[u(%va/FN_FIND-JOB,%q1)],%r[fatepref()] [name(%#)] checked %q0 box[if([gt(%q0,1)],es)] on their [extract([u(%q2/%q3)],1,1,:)] Stress Track.,%!,MYA)]
+                        [trigger(%va/TRIG_BROADCAST,[u(%va/FN_FIND-JOB,%q1)],%!,ADD)]
+                    )]
+                }
+            )], 
+            [pemit(%#,[fatepref()] Syntax error. Please check +help stress.)]
+        )]
+        
+&cmd_stress/clear fcco=$+stress/clear *=*:
+    @eval
+        [if(
+            [regmatchi(%1,^(%[0-9%]+)( to job (%[0-9%]+))?$,-1 0 -1 1)],
+            [switch(
+                [isnum([if([isint(%q1)],[u(fn_can_post_job,%#,%q1)],1)])]
+                [hasattr(%#,_fate_stats)]
+                [if([setr(3,[u(fn_find_stress,[setr(2,[u(%#/_fate_stats)])],%0)])],1,0)]
+                [not([eq([extract([u(%q2/%q3)],3,1,:)],0)])]
+                [gte([extract([u(%q2/%q3)],3,1,:)],%q0)],
+                0*,[pemit(%#,[fatepref()] [u(fn_can_post_job,%#,%q1)])],
+                10*,[pemit(%#,[fatepref()] You don't appear to have stats.)],
+                110*,[pemit(%#,[fatepref()] Can't find a matching Stress Track for %0)],
+                1110*,[pemit(%#,[fatepref()] You don't have any boxes checked on that Stress Track.)],
+                11110,[pemit(%#,[fatepref()] You only have [extract([u(%q2/%q3)],3,1,:)] box[if([gt([extract([u(%q2/%q3)],3,1,:)],1)],es)] checked on that Stress Track.)],
+                {
+                    [set(%q2,%q3:[extract([u(%q2/%q3)],1,2,:)]:[setr(4,[sub([extract([u(%q2/%q3)],3,1,:)],%q0)])])]
+                    [sql([u(sql_stress_update,%q4,[extract(%q3,2,1,_)])])]
+                    [sql([u(sql_fractal_update,[u(%q2/fractal_id)])])]
+                    [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] cleared %q0 box[if([gt(%q0,1)],es)] on their [extract([u(%q2/%q3)],1,1,:)] Stress Track.)]
+                    [if([isint(%q1)],
+                        [trigger(%va/TRIG_ADD,[u(%va/FN_FIND-JOB,%q1)],%r[fatepref()] [name(%#)] cleared %q0 box[if([gt(%q0,1)],es)] on their [extract([u(%q2/%q3)],1,1,:)] Stress Track.,%!,MYA)]
+                        [trigger(%va/TRIG_BROADCAST,[u(%va/FN_FIND-JOB,%q1)],%!,ADD)]
+                    )]
+                }
+            )], 
+            [pemit(%#,[fatepref()] Syntax error. Please check +help stress.)]
+        )]
+
+@@ Help file for +stress command
+        
++info/add +help/stress=Help on +stress/%b%b+stress/check <track>=<#> %[to job <#>%]%r%b%b+stress/clear <track>=<#> %[to job <#>%]%r%rMarks or clears a number of check boxes on the specified Stress Track on your character sheet. This action will be shared with everyone in the room with you. Optionally, you can also add a comment to a specified job noting the action for record-keeping purposes.
+    
+   
+&cmd_consequence/set fcco=$+consequence/set */*/*:
+    @eval
+        [if(
+            [regmatchi(%2,^(%[a-z0-9 %,%]+)(=job (%[0-9%]+))?$,-1 0 -1 1)],
+            [switch(
+                [isnum([if([isint(%q1)],[u(fn_can_post_job,%#,%q1)],1)])]
+                [hasattr(%#,_fate_stats)]
+                [switch([setr(3,[u(fn_find_consequence,[setr(2,[u(%#/_fate_stats)])],%0)])],#-1,0,#-2,0,1)]
+                [if([extract([u(%q2/%q3)],3,1,:)],0,1)],
+                0*,[pemit(%#,[fatepref()] [u(fn_can_post_job,%#,%q1)])],
+                10*,[pemit(%#,[fatepref()] You don't appear to have stats.)],
+                110*,[pemit(%#,[fatepref()]%b
+                    [switch(%q3,
+                        #-1,Couldn't find a matching Consequence for %0. Please try again.,
+                        #-2,Too many matches for %0. Please try to be more specific and try again.
+                    )])],
+                1110,[pemit(%#,[fatepref()] That consequence is already set.)],
+                {
+                    [set(%q2,%q3:[extract([u(%q2/%q3)],1,2,:)]:%1)]
+                    [sql([u(sql_consequence_update,[sqlescape(%1)],[extract(%q3,2,1,_)])])]
+                    [sql([u(sql_fractal_update,[u(%q2/fractal_id)])])]
+                    [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] set their [extract([u(%q2/%q3)],2,1,:)] Consequence to: %1%rReason: %q0)]
+                    [if([isint(%q1)],
+                        [trigger(%va/TRIG_ADD,[u(%va/FN_FIND-JOB,%q1)],%r[fatepref()] [name(%#)] set their [extract([u(%q2/%q3)],2,1,:)] Consequence to: %1%rReason: %q0,%!,MYA)]
+                        [trigger(%va/TRIG_BROADCAST,[u(%va/FN_FIND-JOB,%q1)],%!,ADD)]
+                    )]
+                }
+            )],
+            [pemit(%#,[fatepref()] Syntax error. Please check +help consequence.)]
+        )]
+
+&cmd_consequence/clear fcco=$+consequence/clear */*:    
+    @eval
+        [if(
+            [regmatchi(%1,^(%[a-z0-9 %,%]+)(=job (%[0-9%]+))?$,-1 0 -1 1)],
+            [switch(
+                [isnum([if([isint(%q1)],[u(fn_can_post_job,%#,%q1)],1)])]
+                [hasattr(%#,_fate_stats)]
+                [switch([setr(3,[u(fn_find_consequence,[setr(2,[u(%#/_fate_stats)])],%0)])],#-1,0,#-2,0,1)]
+                [if([extract([u(%q2/%q3)],3,1,:)],1,0)],
+                0*,[pemit(%#,[fatepref()] [u(fn_can_post_job,%#,%q1)])],
+                10*,[pemit(%#,[fatepref()] You don't appear to have stats.)],
+                110*,[pemit(%#,[fatepref()]%b
+                    [switch(%q3,
+                        #-1,Couldn't find a matching Consequence for %0. Please try again.,
+                        #-2,Too many matches for %0. Please try to be more specific and try again.
+                    )])],
+                1110,[pemit(%#,[fatepref()] That consequence is already clear.)],
+                {
+                    [set(%q2,%q3:[extract([u(%q2/%q3)],1,2,:)]:)]
+                    [sql([u(sql_consequence_update,,[extract(%q3,2,1,_)])])]
+                    [sql([u(sql_fractal_update,[u(%q2/fractal_id)])])]
+                    [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] cleared their [extract([u(%q2/%q3)],2,1,:)] Consequence.%rReason: %q0)]
+                    [if([isint(%q1)],
+                        [trigger(%va/TRIG_ADD,[u(%va/FN_FIND-JOB,%q1)],%r[fatepref()] [name(%#)] cleared their [extract([u(%q2/%q3)],2,1,:)] Consequence.%rReason: %q0,%!,MYA)]
+                        [trigger(%va/TRIG_BROADCAST,[u(%va/FN_FIND-JOB,%q1)],%!,ADD)]
+                    )]
+                }
+            )],
+            [pemit(%#,[fatepref()] Syntax error. Please check +help consequence.)]
+        )]
+
++info/add +help/consequence=Help on +consequence/%b%b+consequence/set <# or label>/<Aspect>/<Reason> %[=job <#>%]%r%b%b+consequence/clear <# or label>/<Reason> %[=job <#>%]%r%rThese commands clear or set a consequence on your sheet during play. Both require a reason, which will be reported to the room. Which consequence to modify is specified either by it's numerical value, or the label (Mild/Moderate/Severe); this latter option is most useful when your skills are high enough to have given you a secondary Mild consequence specifically tied to one of your stress tracks.%r%rIt's also possible to record the update to a consequence to a specific job, by using the optional "=job <#>" syntax.%r%rPlease note that it isn't possible to set a consequence that already has an Aspect with these commands; if you want to modify a Severe Consequence to show that it is getting better over time, please do that via the Milestone interface.
+
+&cmd_gamewho/all fcco=$+gamewho/all *:
+    @pemit %#=
+        [if([isdbref([setr(0,[u(fn_find_game,%0)])])],
+            {
+                [header(Who's Online: [u(%q0/game_name)])]%r
+                %xh%bSt [ljust(Name,26)]%b[rjust(Idle,6)]%b[rjust(On,6)]%b[ljust(Location,33)]%xn%r
+                [divider()]%r
+                [iter([sort([search(eplayer=%[strmatch(%[loc(%[u(##/_fate_stats)%])%],%q0)%])])],
+                    [localize([u(display_gamewho_row,##,%#)])],
+                    %b,%r
+                )]%r
+                [footer()]
+            },
+            [fatepref()] Can't find game %0.
+        )]
+        
+&cmd_gamewho fcco=$+gamewho *:
+    @pemit %#=
+        [if([isdbref([setr(0,[u(fn_find_game,%0)])])],
+            {
+                [header(Who's Online: [u(%q0/game_name)])]%r
+                %xh%bSt [ljust(Name,26)]%b[rjust(Idle,6)]%b[rjust(On,6)]%b[ljust(Location,33)]%xn%r
+                [divider()]%r
+                [iter([sort([search(eplayer=%[and(%[strmatch(%[loc(%[u(##/_fate_stats)%])%],%q0)%],%[not(%[hasattr(##,frozen_date)%])%])%] )])],
+                    [localize([u(display_gamewho_row,##,%#)])],
+                    %b,%r
+                )]%r
+                [footer()]
+            },
+            [fatepref()] Can't find game %0.
+        )]
+
+&display_gamewho_row fcco=
+        [setq(0,[u(%0/_fate_stats)])]
+        %b[switch(
+            [hasattr(%q0,frozen_date)]
+            [hasattr(%q0,approve_date)]
+            [hasattr(%q0,submit_date)],
+            1*,[ljust(%xcF%xn,3)],
+            01*,[space(3)],
+            [ljust(?,3)]
+        )]
+        [ljust([name(%0)][if([hasattr(%0,alias)],%b([u(%0/alias)]))],26)]%b
+        [rjust([fmtidle(%0)],6)]%b
+        [rjust([if([hasflag(%0,CONNECT)],[fmtconn(%0)],--)],6)]%b
+        [ljust([switch([orflags([loc(%0)],UD)][isstaff(%1)],11,[name([loc(%0)])],10,Unfindable,[name([loc(%0)])])],31)]
+        
++info/add +help/gamewho=Help on +gamewho/%b%b+gamewho[/all] <game>%r%rLists all characters currently registered to the specified game. By default, characters who are frozen are filtered from the list, but can be seen with the optional /all flag.%r%rThe leftmost column shows Status flag information about the given character. Possible flags are:%r%r%b%b* ? - New or Unapproved%r%b%b* F - Frozen
+        
+&cmd_fate/spend fcco=$+fate/spend*:
+    @eval
+        [if(
+            [regmatchi(%0,^( to job (%[0-9%]+))?$,-1 -1 0)],
+            [switch(
+                [isnum([if([isint(%q0)],[u(fn_can_post_job,%#,%q0)],1)])]
+                [hasattr(%#,_fate_stats)]
+                [attrcnt([setr(1,[u(%#/_fate_stats)])]/fate_*)]
+                [gt([u(%q1/[setr(2,[lattr(%q1/fate_*)])])],0)],
+                0*,[pemit(%#,[fatepref()] [u(fn_can_post_job,%#,%q0)])],
+                10*,[pemit(%#,[fatepref()] You don't appear to have stats.)],
+                110*,[pemit(%#,[fatepref()] You don't appear to have a Fate Points stat.)],
+                1110,[pemit(%#,[fatepref()] You don't have any Fate Points to spend.)],
+                {
+                    [set(%q1,%q2:[sub([u(%q1/%q2)],1)])]
+                    [sql([u(sql_fate_spend,[extract(%q2,2,1,_)])])]
+                    [sql([u(sql_fractal_update,[u(%q1/fractal_id)])])]
+                    [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] spent a Fate Point.)]
+                    [if([isint(%q0)],
+                        [trigger(%va/TRIG_ADD,[u(%va/FN_FIND-JOB,%q0)],%r[fatepref()] [name(%#)] spent a Fate Point.,%!,MYA)]
+                        [trigger(%va/TRIG_BROADCAST,[u(%va/FN_FIND-JOB,%q0)],%!,ADD)]
+                    )]
+                }
+            )],
+            [pemit(%#,[fatepref()] Syntax error. Please check +help fate.)]
+        )]
+        
+&sql_fate_gain fcco=update [u(TBL_PRE)]fate_fractal_stat set stat_value=stat_value + 1, modified_date=[mw_timestamp()] where fractal_stat_id = %0;
+    
+&cmd_fate/gain fcco=$+fate/gain*:
+    @eval
+        [if(
+            [regmatchi(%0,^( to job (%[0-9%]+))?$,-1 -1 0)],
+            [switch(
+                [isnum([if([isint(%q0)],[u(fn_can_post_job,%#,%q0)],1)])]
+                [hasattr(%#,_fate_stats)]
+                [attrcnt([setr(1,[u(%#/_fate_stats)])]/fate_*)],
+                0*,[pemit(%#,[fatepref()] [u(fn_can_post_job,%#,%q0)])],
+                10*,[pemit(%#,[fatepref()] You don't appear to have stats.)],
+                110,[pemit(%#,[fatepref()] You don't appear to have a Fate Points stat.)],
+                {
+                    [setq(2,[lattr(%q1/fate_*)])]
+                    [set(%q1,%q2:[add([u(%q1/%q2)],1)])]
+                    [sql([u(sql_fate_gain,[extract(%q2,2,1,_)])])]
+                    [sql([u(sql_fractal_update,[u(%q1/fractal_id)])])]
+                    [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] gained a Fate Point.)]
+                    [if([isint(%q0)],
+                        [trigger(%va/TRIG_ADD,[u(%va/FN_FIND-JOB,%q0)],[fatepref()] [name(%#)] gained a Fate Point.,%!,MYA)]
+                        [trigger(%va/TRIG_BROADCAST,[u(%va/FN_FIND-JOB,%q0)],%!,ADD)]
+                    )]
+                }
+            )],
+            [pemit(%#,[fatepref()] Syntax error. Please check +help fate.)]
+        )]
+        
+&cmd_fate/give fcco=$+fate/give *:
+    @eval
+        [switch(
+            [isdbref([num(*%0)])]
+            [hasattr([num(*%0)],_fate_stats)]    
+            [u(fn_can_staff,[u([setr(0,[u([num(*%0)]/_fate_stats)])]/game_id)],%#)]
+            [attrcnt(%q0/fate_*)],
+            0*,[pemit(%#,[fatepref()] %0 could not be found.)],
+            10*,[pemit(%#,[fatepref()] [name([num(*%0)])] doesn't appear to have stats.)],
+            110*,[pemit(%#,[fatepref()] You don't have permission to give [name([num(*%0)])] Fate Points.)],
+            1110,[pemit(%#,[fatepref()] [name([num(*%0)])] doesn't appear to have a Fate Points stat.)],
+            {
+                [setq(1,[lattr(%q0/fate_*)])]
+                [set(%q0,%q1:[add([u(%q0/%q1)],1)])]
+                [sql([u(sql_fate_gain,[extract(%q1,2,1,_)])])]
+                [sql([u(sql_fractal_update,[u(%q0/fractal_id)]
+                [pemit([lcon([loc([num(*%0)])])] [if([not([member([lcon([loc([num(*%0)])])],%#)])],%#)],[fatepref()] [name(%#)] gave [name([num(*%0)])] a Fate Point.)]  
+            }
+        )]
+        
+&sql_fate_refresh fcco=update [u(TBL_PRE)]fate_fractal_stat set stat_value=%0, modified_date=[mw_timestamp()] where fractal_stat_id=%1;        
+        
+&cmd_fate/refresh fcco=$+fate/refresh *:
+    @eval
+        [switch(
+            [isdbref([setr(0,[u(fn_find_game,%0)])])]
+            [u(fn_can_staff,[extract([name(%q0)],2,1)],%#)],
+            0*,[pemit(%#,[fatepref()] Can't find game %0)],
+            10,[pemit(%#,[fatepref()] You don't have permission to reset Fate Points for [u(%q0/game_name)].)],
+            {
+                [iter([lcon(%q0)],
+                    [if([strmatch([name(##)],Stats: *)],
+                        [setq(1,[extract([name(##)],2,1)])]
+                        [if(
+                            [and(
+                                [attrcnt(##/fate_*)],
+                                [attrcnt(##/refresh_*)],
+                                [gt([u(##/[lattr(##/refresh_*)])],[u(##/[lattr(##/fate_*)])])]
+                            )],
+                            [set(##,[lattr(##/fate_*)]:[u(##/[lattr(##/refresh_*)])])]
+                            [sql([u(sql_fate_refresh)],[u(##/[lattr(##/refresh_*)])],[extract([lattr(##/fate_*)],2,1,_)])]
+                            [pemit([lcon([loc(%q1)])],[fatepref()] [name(%#)] refreshed [name(%q1)]'s Fate Points.)]
+                        )]
+                    )]
+                )]
+                [pemit(%#,[fatepref()] All Fate Points refreshed for [u(%q0/game_name)])]
+            }
+        )]
+ 
+@@ Help and Staff help for +fate
+
++info/add +help/fate=Help on +Fate/%b%b+fate/spend %[to job <#>%]%r%b%b+fate/gain %[to job <#>%]%r%b%b+fate/give <character>%r%b%b+fate/refresh <game>%r%rThe first two options spend or gain a fate point, while notifying the room that you've done so. Optionally, you can also record the spend or gain to a specified job as a new comment.%r%rThe /give option allows someone designated as staff for a specific game to give a Fate Point to the specified character.%r%rThe final option, /refresh, allows staff to refresh the Fate Point pools for all players of a specified game. Which game can be specified either by name, or by number (corresponding to the number shown with the +games command.)
+         
+&fn_can_staff fcco=
+    [localize([switch(
+        [and(
+            [if([isdbref(%0)],
+                [setq(0,%0)]
+                [and([eq(%vb,[loc(%0)])],[strmatch([name(%0)],Game *)])], 
+                [isdbref([setr(0,[locate(%vb,Game %0,iT)])])]
+            )],
+            [or(
+                [strmatch(%1,[u(%q0/game_owner)])],
+                [member([u(%q0/game_staff)],%1)]
+            )]
+        )],
+        1,1,
+        0
+    )])]
+    
+&fn_is_fatestaff fcco=
+    [localize(
+        [if([member([iter([lcon(%vb)],[u(##/game_owner)] [u(##/game_staff)])],%0)],
+            1,0
+        )]
+    )]
+    
+&fn_staff_for_game fcco=
+    [localize(
+        [setq(0,#-1)]
+        [iter([lcon(%vb)],
+            [if([member([u(##/game_owner)] [u(##/game_staff)],%0)],
+                [setq(0,##)]
+            )],
+            %b,@@
+        )]
+        %q0
+    )]
+            
+&fn_find_game fcco=
+    [localize([if([isint(%0)],
+        [if([setr(0,[extract([sort([lcon(%vb)])],%0,1)])],%q0,#-1)],
+        [if([setr(0,[iter([lcon(%vb)],[if([strmatch([u(##/game_name)],%0*)],##)],%b,@@)])],%q0,#-1)]
+    )])]
+    
+    
+&fn_find_stress fcco=
+    [localize([if([setr(0,[iter([lattr(%0/stress_*)],[if([strmatch([extract([u(%0/##)],1,1,:)],%1*)],##)],%b,@@)])],%q0)])]
+    
+&fn_find_consequence fcco=
+    [localize(
+        [switch(
+            [setq(0,0)]
+            [setq(1,)]
+            [iter([lattr(%0/consequence_*)],
+                [if([isint(%1)],
+                    [if([eq(%1,[extract([u(%0/##)],1,1,:)])],[setq(0,[add(%q0,1)])][setq(1,##)])],
+                    [if([strmatch([extract([u(%0/##)],2,1,:)],%1*)],[setq(0,[add(%q0,1)])][setq(1,##)])]
+                )],
+                %b,@@
+            )]
+            %q0,
+            0,#-1,
+            1,%q1,
+            #-2
+        )]
+    )]
+             
+    
+&fn_can_post_job fcco=
+    [localize([switch(
+        [not([u(%va/FN_GUEST,%0)])]
+        [isdbref([setr(0,[u(%va/FN_FIND-JOB,%1)])])]
+        [or([and([u(%va/IS_PUBLIC,%q0)],[match([get(%q0/OPENED_BY)],%0)])],[u(%va/FN_MYACCESSCHECK,[parent(%q0)],%0,%q0)],[udefault(%q0/ADD_ACCESS,0,%0)])]
+        [not([u(%va/FN_HASATTR,%q0,LOCKED)])],
+        0*,Guests cannot roll dice to a job.,
+        10*,Invalid job number.,
+        110*,[name(%q0)] is not yours. You can only modify your own jobs or jobs with public access.,
+        1110,That job is locked and cannot be changed at this time.,
+        1
+    )])] 
+    
+&cmd_dice fcco=$+dice*:
+    @switch
+        [if(
+            [regmatchi(%0,^(%[a-z %]*)(%[-+0-9 %]*)(=%[a-z0-9 %]*)?$,-1 a b c)],
+            [setq(e,0)]
+            [setq(4,0)]
+            [setq(5,)]
+            [setq(6,0)]
+            [if([trim(%qa)],
+                [if([hasattr(%#,_fate_stats)],
+                    [setq(2,0)]
+                    [iter([lattr([setr(0,[u(%#/_fate_stats)])]/skill_*)],
+                        [if([strmatch([setr(1,[u(%q0/##)])],*:[trim(%qa)]*)],
+                            [setq(2,[add(%q2,1)])][setq(3,[extract(%q1,2,1,:)])][setq(4,[extract(%q1,3,1,:)])]
+                        )],
+                        %b,@@
+                    )]
+                    [switch([gt(%q2,1)][lt(%q2,1)],
+                        1*, [setq(m,[fatepref()] Too many skills matched "[trim(%qa)]"%, please specify.)][setq(e,1)],
+                        01, [setq(m,[fatepref()] No skill found that matched "[trim(%qa)]")][setq(e,1)]
+                    )],
+                    [setq(m,[fatepref()] You don't appear to have stats to roll against.)][setq(e,1)]
+                )]
+            )]
+            [if([and([strlen([trim(%qb)])],[not(%qe)])],
+                [setq(5,[edit([edit([strip(%qb,%b)],-,%b-)],+,%b+)])]
+                [iter(%q5,
+                    [if([isnum(##)],
+                        [setq(6,[add(%q6,##)])],
+                        [setq(e,1)]
+                    )],
+                    %b,@@
+                )]
+                [if(%qe,
+                    [setq(m,[fatepref()] Error parsing modifiers: [trim(%qb)])]
+                )]
+            )]
+            [if([and([strlen([trim(%qc)])],[not(%qe)])],
+                [if([regmatchi([trim(%qc)],^= *job (%[0-9%]+)$,-1 j)],
+                    [switch(
+                        [not(u(%va/FN_GUEST,%#))]
+                        [setq(K,u(%va/FN_FIND-JOB,%qj))][isdbref(%qk)]
+                        [or(and(u(%va/IS_PUBLIC,%qk),match(get(%qk/OPENED_BY),%#)),u(%va/FN_MYACCESSCHECK,parent(%qk),%#,%qk),udefault(%qk/ADD_ACCESS,0,%#))]
+                        [not(u(%va/FN_HASATTR,%qk,LOCKED))],
+                            0*,[setq(m,[fatepref()] Guests cannot roll dice to a job.)][setq(e,1)],
+                            10*,[setq(m,[fatepref()] Invalid job number.)][setq(e,1)],
+                            110*,[setq(m,[fatepref()] [name(%qk)] is not yours. You can only modify your own jobs or jobs with public access.)][setq(e,1)],
+                            1110*,[setq(m,[fatepref()] That job is locked and cannot be changed at this time.)][setq(e,1)]
+                    )],
+                    [setq(l,[rest([trim(%qc)],=)])]
+                )]
+            )],
+            [setq(m,[fatepref()] Parsing error. Please check +help dice.)][setq(e,1)]
+        )]
+        [setq(t,self)]
+        [if([not(%qe)],
+            [setq(m,
+                [subheader([fatepref()] [name(%#)] to%b 
+                    [switch(
+                        [isdbref(%qk)][gt([strlen(%ql)],0)],
+                        1*,[name(%qk)][setq(t,job)],
+                        01,Me[setq(t,list)],
+                        Here[setq(t,here)]
+                    )]
+                )]%r
+                %b%bRolled%b
+                [if(%q3,%q3 %q4,Base Dice)][edit([edit(%q5,+,+%b)],-,-%b)]%r
+                %b%b
+                [setq(7,[add(%q4,%q6)])][iter([lrand(-1,1,4)],{[setq(7,[add(%q7,##)])]%[[switch(##,1,+,-1,-,%b)]%] })]
+                %bfor a result of: [fateladder(%q7,1)]%r
+                [divider()]
+            )]
+        )]
+        [r(t)]=
+            self,{@pemit %#=%qm},
+            here,{@pemit/contents [loc(%#)]=%qm},
+            list,{@pemit/list %# [iter(%ql, [num(*##)])]=%qm},
+            job,{@pemit %#=%qm;@trigger %va/TRIG_ADD=%qk,%r%qm,%!,MYA;@trigger %va/TRIG_BROADCAST=%qk,%!,ADD}
+
+
+@@ HELP FILE for +dice
+
++info/add +help/dice=Help on +Dice/%b%b+dice %[<skill name>%] %[<modifiers>%] %[=<targets>%]%r%r%b%bFor FATE games, rolls four Fate Dice (a special d6, with two blank sides, two sides marked with a +, and two sides marked with a -) and then adds up the results, giving you a possible range of -4 to +4. There are a number of optional arguments available as well, each of which can be used separate of the others:%r%r%b%b* <skill name>: If you are a character with statted skills, this will add%r[space(18)]the rank of the named skill to your final total.%r%r%b%b* <modifiers>:  A list of positive and negatives values (e.g. + 2 - 4) that%r[space(18)]will be added to your final total.%r%r%b%b* <targets>:%b%b%b%bThis is actually two options in one. The first is a space-%r[space(18)]separated list of user names; each of these people will be%r[space(18)]privately shown your roll and the results, rather than%r[space(18)]those results being shown to the whole room as is default. %r%r[space(18)]The second option is "=job <#>". In this case, the results%r[space(18)]of the roll will be added as a comment to the listed job,%r[space(18)]presuming you have permission to access the listed job.
+ 
+
+@@ Set these up as permanent functions, through whatever method you usually use
+
+&fn_rightcol fcco=
+    [if([isint(%1)],
+        [if([lt(%1,78)],
+            [setq(0,[sub(78,%1)])]
+            [setq(1,0)]
+            [setq(2,[if(%2,%2,%b)])]
+            [setq(3,[if(%3,%3,%b)])]
+            [iter(%0,
+                [if([gt([add([r(1)],[strlen(##)],[strlen([r(3)])])],[r(0)])],
+                    %r[space(%1)][setq(1,[add([strlen(##)],[strlen([r(3)])])])],
+                    [setq(1,[add([r(1)],[strlen(##)],[strlen([r(3)])])])]
+                )]##,
+                [r(2)],[r(3)]
+            )],
+            #-1 FUNCTION (RIGHTCOL) REQUIRES ARGUMENT 2 BE LESS INTEGER THAN 78
+        )],
+        #-1 FUNCTION (RIGHTCOL) REQUIRES INTEGER FOR ARGUMENT 2
+    )]
+
+&fn_fateladder fcco=[if(
+    [isint(%0)],
+        [switch(%0,
+            7,Epic,
+            6,Fantastic,
+            5,Superb,
+            4,Great,
+            3,Good,
+            2,Fair,
+            1,Average,
+            0,Mediocre,
+            -1,Poor,
+            [if(
+                [gt(%0,7)],
+                Fantastic,
+                Terrible
+            )]
+        )]
+        [if(%1,
+            %b([if([gte(%0,0)],+)]%0)
+        )],
+        [fatepref()] Not a valid integer
+    )]
+   
+    
+&fn_fatepref fcco=
+    %xn%xcFATE:%xn
+
+
+&has_access #28=[or(u(%va/FN_STAFFALL,%#),u(#425/FN_IS_FATESTAFF,%#))]
+    
+    
+&summary #28=[rjust(ansi(hc,Game:),10)]%b[ifelse(u(%va/FN_HASATTRP,%0,GAME),[u([get(%0/GAME)]/game_name)],Unset)]
+&summary_order #28=GAME
+&LOG_GAME #28=[ifelse([u(%va/FN_HASATTRP,%0,GAME)],[u([get(%0/GAME)]/game_name)],Unset)]
+&ACCESS_GAME #28=[u(%va/FN_STAFFALL,%0)]
+&ERROR_GAME #28=Couldn't find a game that matches.
+&PROCESS_GAME #28=[setq(3,GAME)][setq(1,[u(#425/fn_find_game,%0)])][if([isdbref(%q1)],1,0)]
+
+&help #28=%rThis bucket is for queries from staff to players.%r%r[u(%va/FN_BREAK,ansi(hc,Settings for +job/sumset))]%r[ljust(ansi(h,GAME),10)] Accepts either a game number based on the +games list, or a matching name. This should be automatically set in most cases, and makes certain that staff for the listed game have proper access to this job.
+    
+    
+&hook_oth #33=
+    &ASSIGNED_TO %0=%1;
+    @eval [localize(
+        [if([isdbref([setr(0,[u(#425/fn_staff_for_game,%1)])])],
+            [set(%0,game:%q0)]
+            [set(%0,jobaccess:[map(#15/FN_OBJID,[setunion([u(%q0/game_staff)],[u(%q0/game_owner)])])])]
+        )]
+    )]
+
+&CMD_PLOT #14=$+plot *=*:
+    @switch [u(#425/FN_IS_FATESTAFF,%#)]=
+        0,{@pemit %#=Permission denied.},
+        {
+            @pemit %#=You have created plot job number [inc(get(%va/JOBS_NUM))] entitled '[u(%va/FN_STRTRUNC,trim(%0),30)]'.;
+            @trigger %va/TRIG_CREATE=%#,u(%va/FN_FIND-BUCKET,TPS),1,[u(%va/FN_STRTRUNC,trim(secure(%0)),30)],trim(%1),,,4
+        }    
+        
++info/add +help/plot=Help on +plot/%b%b+plot <title>=<description>%r%rThis command, locked to those who are set as Staff for a FATE game, creates a new job in the TPS bucket for keeping track of active plots. TPS jobs have extensive available summary information, and these fields should be accessible via +job/sumset once the job has been opened.

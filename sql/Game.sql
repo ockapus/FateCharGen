@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS /*_*/fate_game (
     use_consequences tinyint default NULL,
     -- Boolean flag: are character sheets public or private for this game?
     private_sheet tinyint default NULL,
+    -- Boolean flag: use Atomic Robo model -- refresh = aspect count, don't subtract for stunts
+    use_robo_refresh tinyint default NULL,
     -- When was this game created
     create_date varbinary(14) default NULL,
     -- When were settings last modified?

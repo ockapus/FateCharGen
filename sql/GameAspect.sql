@@ -1,7 +1,7 @@
 -- Game aspects table setup for FateCharGen extension
 -- Created originally for Alien City
 -- porpentine@gmail.com
--- Last Update: December 4, 2015
+-- Last Update: April 24, 2016
 
 -- Add game aspects table
 CREATE TABLE IF NOT EXISTS /*_*/fate_game_aspect (
@@ -11,12 +11,12 @@ CREATE TABLE IF NOT EXISTS /*_*/fate_game_aspect (
     game_id int default NULL,
     -- What label should be displayed for this chargen aspect?
     game_aspect_label varchar(64) default NULL,
-    -- What order should this aspect appear on a character's sheet?
-    game_aspect_ordinal int default NULL,
     -- Boolean: should this aspect be marked as belonging to a shared resource of some sort?
     is_shared tinyint default NULL,
     -- Boolean: is this aspect a 'secret', to be hidden even if sheets are public in this game?
-    is_secret tinyint default NULL
+    is_secret tinyint default NULL,
+    -- Boolean: is this aspect one that can only be changed during a major milestone?
+    is_major tinyint default NULL
 ) /*$wgDBTableOptions*/;
 
 CREATE INDEX /*i*/fga_game_id ON /*_*/fate_game_aspect (game_id);

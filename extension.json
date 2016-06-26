@@ -22,6 +22,9 @@
     "Hooks": {
         "LoadExtensionSchemaUpdates": [
             "FateCharGenHooks::onLoadExtensionSchemaUpdates"
+        ],
+        "SkinTemplateNavigation::SpecialPage": [
+            "FateCharGenHooks::addContentActions"
         ]
     },
     "MessagesDirs": {
@@ -35,11 +38,16 @@
     },
     "GroupPermissions": {
        "muxstaff": {
-           "fategm": true
+           "fategm": true,
+           "fatestaff": true
+       },
+       "fatestaff": {
+           "fatestaff": true
        }
     },
     "AvailableRights": [
-       "fategm"
+       "fategm",
+       "fatestaff"
     ],
     "manifest_version": 1
 }
