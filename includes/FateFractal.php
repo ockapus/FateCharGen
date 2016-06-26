@@ -42,6 +42,7 @@ class FateFractal {
         
         if ($data) {
             $this->fate_game = new FateGame( $data->{game_id} );
+            $this->game_id = $data->{game_id};
             $this->user_id = $data->{user_id};
             $this->user_name = $data->{user_name};
             $this->name = ( $data->{canon_name} ? $data->{canon_name} : $data->{fractal_name} );
@@ -129,6 +130,15 @@ class FateFractal {
                         }
                     } else {
                         return ($a->{is_major} < $b->{is_major} ? 1 : -1);
+                    }
+                });
+            }
+            if (array_key_exists(FateGameGlobals::STAT_MOOK, $this->stats)) {
+                @usort($this->stats[FateGameGlobals::STAT_MOOK], function($a, $b) {
+                    if ($a->{stat_value} == $b->{stat_value}) {
+                        return strcmp($a->{stat_field}, $b->{stat_field});
+                    } else {
+                        return ($a->{stat_value} < $b->{stat_value} ? 1 : -1);
                     }
                 });
             }
@@ -329,6 +339,30 @@ EOT;
             }
         }
         
+        if (array_key_exists(FateGameGlobals::STAT_MOOK, $this->stats)) {
+            $levels = FateGameGlobals::getMookLevels();
+            $last_label = '';
+            $first = 1;
+            foreach ($this->stats[FateGameGlobals::STAT_MOOK] as $mook) {
+                $this_label = $levels[$mook->{stat_value}];
+                if ($this_label != $last_label) {
+                    if (!$first) {
+                        $block .= "</td></tr>";
+                    } else {
+                        $first = 0;
+                    }
+                    $block .= "<tr><td class='section_label'>$this_label (" . ($mook->{stat_value} > 0 ? '+' : '') . $mook->{stat_value} . ") at:</td><td>";
+                    $last_label = $this_label;
+                } else {
+                    $block .= ", ";
+                }
+                $block .= $mook->{stat_field};
+            }
+            if ($last_label) {
+                $block .= "</td></tr>";
+            }
+        }
+        
         if (array_key_exists(FateGameGlobals::STAT_STUNT, $this->stats)) {
             $block .= "<tr><td class='section_label'>Stunts:</td><td>";
             foreach ($this->stats[FateGameGlobals::STAT_STUNT] as $stunt) {
@@ -451,6 +485,32 @@ EOT;
                 $sheet .= "</table>";
             }
             /* Other Skill Distributions eventually go here */
+        }
+        
+        if (array_key_exists(FateGameGlobals::STAT_MOOK, $this->stats)) {
+            $sheet .= "<h2>MOOK SKILLS</h2>\n";
+            $levels = FateGameGlobals::getMookLevels();
+            $last_label = '';
+            $first = 1;
+            foreach ($this->stats[FateGameGlobals::STAT_MOOK] as $mook) {
+                $this_label = $levels[$mook->{stat_value}];
+                if ($this_label != $last_label) {
+                    if (!$first) {
+                        $sheet .= "</div>";
+                    } else {
+                        $first = 0;
+                    }
+                    $sheet .= "<div class='block'><div class='block_label'>" . $this_label . ' (' .
+                              ($mook->{stat_value} > 0 ? '+' : '') . $mook->{stat_value} . ') at</div>';
+                    $last_label = $this_label;
+                } else {
+                    $sheet .= ", ";
+                }
+                $sheet .= $mook->{stat_field};
+            }
+            if ($last_label) {
+                $sheet .= "</div>";
+            }
         }
         
         if (array_key_exists(FateGameGlobals::STAT_STUNT, $this->stats)) {

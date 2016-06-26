@@ -29,6 +29,8 @@ Add to Cron List:
 
 &sql_game_turn_order fcco=select '%0', t.is_physical, t.ordinal, s.game_skill_label from [u(TBL_PRE)]fate_game_turn_order t, [u(TBL_PRE)]fate_game_skill s where t.skill_id = s.game_skill_id and t.game_id = %1 order by is_physical, ordinal;
 
+&sql_game_staff fcco=select '%0', group_concat(r.character_dbref separator ' ') from [u(TBL_PRE)]fate_game_staff s, [u(TBL_PRE)]muxregister_register r where s.register_id = r.register_id and s.game_id = %1;
+
 &tr_cron_fractal fcco=@query/sql me/tr_updated_fractals=[u(db_name)]/[u(sql_updated_fractals)]
 
 &tr_updated_fractals fcco=
@@ -108,6 +110,7 @@ Add to Cron List:
     @set/quiet %q0=skill_alternative:[extract([rsrec(|)],6,1,|)];
     @if [gt([extract([rsrec(|)],7,1,|)],[u(last_game_update)])]=@set/quiet me=last_game_update:[extract([rsrec(|)],7,1,|)];
     @query/sql %#/tr_game_turn_order=[u(db_name)]/[u(sql_game_turn_order,%q0,%q1)];
+    @query/sql %#/tr_game_staff=[u(db_name)]/[u(sql_game_staff,%q0,%q1)];
     @if [rsnext()]={@trigger/quiet me/tr_update_single_game}
    
 
@@ -134,7 +137,21 @@ Add to Cron List:
             [set(%q0,_turn_order_%q1:[u(%q0/_turn_order_%q1)]|%q3)]
         )];
     @if [rsnext()]={@trigger/quiet me/tr_set_game_turn_order}
-    
+
+&tr_game_staff fcco=
+    @if [rserror()]=
+    {
+        @if [rsrows()]=
+        {
+            @eval
+                [setq(0,[extract([rsrec(|)],1,1,|)])]
+                [setq(1,[extract([rsrec(|)],2,1,|)])]
+                [set(%q0,game_staff:%q1)]
+        }
+    },
+    {
+        @mail/quick [u(errors_to)]/Staff Update Error=MySQL error occured with game staff query:%r%r[rserror()]
+    }
     
 &tr_fractal_stats fcco=
     @if [rserror()]=
@@ -223,13 +240,20 @@ Add to Cron List:
         [hasattr(%#,Guest)]
         [not([isdbref([num(*%0)])])]
         [not([hasattr([num(*%0)],_fate_stats)])]
+        [or(
+            [hasflag(%#,Wizard)],
+            [strmatch(%#,%0)],[strmatch(%#,[num(*%0)])],
+            [u(fn_can_staff,[loc([u([num(*%0)]/_fate_stats)])])]
+        )]
         ,
         1*,
         [fatepref()] This command not available to guests.,
         01*,
         [fatepref()] %0 could not be found.,
-        001,
+        001*,
         [fatepref()] [name([num(*%0)])] does not appear to have stats set.,
+        0000,
+        [fatepref()] You do not have permission to view [name([num(*%0)])]'s sheet.,
         [setq(0,[num(*%0)])]
         [setq(1,[u([r(0)]/_fate_stats)])]
         [header([name([r(0)])]'s Stats)]%r
@@ -422,6 +446,7 @@ Add to Cron List:
         [setq(0,[extract([sort([lcon(%vb)])],%0,1)])]
         [header(+game: [u(%q0/game_name)])]%r
         [rjust(Owner:%b,[u(colsize)])][name([u(%q0/game_owner)])]%r
+        [rjust(Staff:%b,[u(colsize)])][sort([iter([u(%q0/game_staff)],[name(##)],%b,|)],a,|,%,%b)]%r
         [rjust(Description:%b,[u(colsize)])][rightcol([escape([u(%q0/game_description)])],[u(colsize)])]%r
         [rjust(Status:%b,[u(colsize)])][u(%q0/game_status)]%r
         [if([lattr(%q0/aspect_*)], 
@@ -1112,18 +1137,45 @@ Add to Cron List:
 &fn_can_staff fcco=
     [localize([switch(
         [and(
-            [isdbref([setr(0,[locate(%vb,Game %0,iT)])])],
-            [strmatch(%1,[u(%q0/game_owner)])]
+            [if([isdbref(%0)],
+                [setq(0,%0)]
+                [and([eq(%vb,[loc(%0)])],[strmatch([name(%0)],Game *)])], 
+                [isdbref([setr(0,[locate(%vb,Game %0,iT)])])]
+            )],
+            [or(
+                [strmatch(%1,[u(%q0/game_owner)])],
+                [member([u(%q0/game_staff)],%1)]
+            )]
         )],
         1,1,
         0
     )])]
-
+    
+&fn_is_fatestaff fcco=
+    [localize(
+        [if([member([iter([lcon(%vb)],[u(##/game_owner)] [u(##/game_staff)])],%0)],
+            1,0
+        )]
+    )]
+    
+&fn_staff_for_game fcco=
+    [localize(
+        [setq(0,#-1)]
+        [iter([lcon(%vb)],
+            [if([member([u(##/game_owner)] [u(##/game_staff)],%0)],
+                [setq(0,##)]
+            )],
+            %b,@@
+        )]
+        %q0
+    )]
+            
 &fn_find_game fcco=
     [localize([if([isint(%0)],
         [if([setr(0,[extract([sort([lcon(%vb)])],%0,1)])],%q0,#-1)],
         [if([setr(0,[iter([lcon(%vb)],[if([strmatch([u(##/game_name)],%0*)],##)],%b,@@)])],%q0,#-1)]
     )])]
+    
     
 &fn_find_stress fcco=
     [localize([if([setr(0,[iter([lattr(%0/stress_*)],[if([strmatch([extract([u(%0/##)],1,1,:)],%1*)],##)],%b,@@)])],%q0)])]
@@ -1245,7 +1297,7 @@ Add to Cron List:
 
 +info/add +help/dice=Help on +Dice/%b%b+dice %[<skill name>%] %[<modifiers>%] %[=<targets>%]%r%r%b%bFor FATE games, rolls four Fate Dice (a special d6, with two blank sides, two sides marked with a +, and two sides marked with a -) and then adds up the results, giving you a possible range of -4 to +4. There are a number of optional arguments available as well, each of which can be used separate of the others:%r%r%b%b* <skill name>: If you are a character with statted skills, this will add%r[space(18)]the rank of the named skill to your final total.%r%r%b%b* <modifiers>:  A list of positive and negatives values (e.g. + 2 - 4) that%r[space(18)]will be added to your final total.%r%r%b%b* <targets>:%b%b%b%bThis is actually two options in one. The first is a space-%r[space(18)]separated list of user names; each of these people will be%r[space(18)]privately shown your roll and the results, rather than%r[space(18)]those results being shown to the whole room as is default. %r%r[space(18)]The second option is "=job <#>". In this case, the results%r[space(18)]of the roll will be added as a comment to the listed job,%r[space(18)]presuming you have permission to access the listed job.
  
-    
+
 @@ Set these up as permanent functions, through whatever method you usually use
 
 &fn_rightcol fcco=
@@ -1296,3 +1348,34 @@ Add to Cron List:
     %xn%xcFATE:%xn
 
 
+&has_access #28=[or(u(%va/FN_STAFFALL,%#),u(#425/FN_IS_FATESTAFF,%#))]
+    
+    
+&summary #28=[rjust(ansi(hc,Game:),10)]%b[ifelse(u(%va/FN_HASATTRP,%0,GAME),[u([get(%0/GAME)]/game_name)],Unset)]
+&summary_order #28=GAME
+&LOG_GAME #28=[ifelse([u(%va/FN_HASATTRP,%0,GAME)],[u([get(%0/GAME)]/game_name)],Unset)]
+&ACCESS_GAME #28=[u(%va/FN_STAFFALL,%0)]
+&ERROR_GAME #28=Couldn't find a game that matches.
+&PROCESS_GAME #28=[setq(3,GAME)][setq(1,[u(#425/fn_find_game,%0)])][if([isdbref(%q1)],1,0)]
+
+&help #28=%rThis bucket is for queries from staff to players.%r%r[u(%va/FN_BREAK,ansi(hc,Settings for +job/sumset))]%r[ljust(ansi(h,GAME),10)] Accepts either a game number based on the +games list, or a matching name. This should be automatically set in most cases, and makes certain that staff for the listed game have proper access to this job.
+    
+    
+&hook_oth #33=
+    &ASSIGNED_TO %0=%1;
+    @eval [localize(
+        [if([isdbref([setr(0,[u(#425/fn_staff_for_game,%1)])])],
+            [set(%0,game:%q0)]
+            [set(%0,jobaccess:[map(#15/FN_OBJID,[setunion([u(%q0/game_staff)],[u(%q0/game_owner)])])])]
+        )]
+    )]
+
+&CMD_PLOT #14=$+plot *=*:
+    @switch [u(#425/FN_IS_FATESTAFF,%#)]=
+        0,{@pemit %#=Permission denied.},
+        {
+            @pemit %#=You have created plot job number [inc(get(%va/JOBS_NUM))] entitled '[u(%va/FN_STRTRUNC,trim(%0),30)]'.;
+            @trigger %va/TRIG_CREATE=%#,u(%va/FN_FIND-BUCKET,TPS),1,[u(%va/FN_STRTRUNC,trim(secure(%0)),30)],trim(%1),,,4
+        }    
+        
++info/add +help/plot=Help on +plot/%b%b+plot <title>=<description>%r%rThis command, locked to those who are set as Staff for a FATE game, creates a new job in the TPS bucket for keeping track of active plots. TPS jobs have extensive available summary information, and these fields should be accessible via +job/sumset once the job has been opened.

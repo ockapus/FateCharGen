@@ -8,7 +8,7 @@
 
 class SpecialFateGameConfig extends SpecialPage {
     public function __construct() {
-        parent::__construct( 'FateGameConfig', 'fategm' );
+        parent::__construct( 'FateGameConfig', 'fatestaff' );
     }
 
     /**
@@ -25,27 +25,22 @@ class SpecialFateGameConfig extends SpecialPage {
         
         $this->setHeaders();
         $out->setPageTitle( $this->msg( 'fategameconfig' ) );
-        $out->wrapWikiMsg( '=$1=' , array( 'fategameconfig' ) );   
-        $out->addWikiMsg( 'fategameconfig-desc' );
         
         if ($user->isAnon()) {
             $out->addHTML("<div class='error' style='font-weight: bold; color: red'>You must be logged in to access this page.</div>");
-        } elseif (!$user->isAllowed('fategm')) {
+        } elseif (!$user->isAllowed('fatestaff')) {
             $out->addHTML("<div class='error' style='font-weight: bold; color: red'>You don't have permission to access this page.</div>");
         } else {
             $game_id = $request->getInt('game_id');
             if ($sub == 'View') {
-                $out->addWikiText('* View a specific Game');
                 $this->viewSpecificGame();
             } elseif ($sub == 'Edit') {
                 if ($action == 'edit') {
                     $results = $this->processEditGameForm();
                     if (count($results['error']) == 0) {
                         $this->saveGameEdits($game_id, $results);
-                        $this->viewSpecificGame();
-                    } else {
-                        $this->editGame($results);
                     }
+                    $this->editGame($results);
                 } else {
                     $this->editGame();
                 }
@@ -54,10 +49,8 @@ class SpecialFateGameConfig extends SpecialPage {
                     $results = $this->processApprovalForm();
                     if (count($results['error']) == 0) {
                         $this->saveApprovals($game_id, $results);
-                        $this->viewSpecificGame();
-                    } else {
-                        $this->viewPendingApprovals($results);
                     }
+                    $this->viewPendingApprovals($results);
                 } else {
                     $this->viewPendingApprovals();
                 }
@@ -66,7 +59,6 @@ class SpecialFateGameConfig extends SpecialPage {
             } elseif ($sub == 'Delete') {
                 $out->addWikiText('* Delete a specific Game');
             } else {
-                $out->addWikiText('* List All Games');
                 $this->listAllGames();
             }
         }   
@@ -175,10 +167,12 @@ class SpecialFateGameConfig extends SpecialPage {
                 );
                 // Go through skills twice. First time: calculate cost
                 $mod_for_discipline = 0;
-                foreach ($data['skill'] as $skill_id => $junk) {
-                    $inserts['mode_cost'] += $game->skills_by_id[$skill_id]['mode_cost'];
-                    if ($game->skills_by_id[$skill_id]['has_disciplines']) {
-                        $mod_for_discipline = 1;
+                if (in_array('skill', $data)) {
+                    foreach ($data['skill'] as $skill_id => $junk) {
+                        $inserts['mode_cost'] += $game->skills_by_id[$skill_id]['mode_cost'];
+                        if ($game->skills_by_id[$skill_id]['has_disciplines']) {
+                            $mod_for_discipline = 1;
+                        }
                     }
                 }
                 $inserts['mode_cost'] += $mod_for_discipline;
@@ -188,14 +182,16 @@ class SpecialFateGameConfig extends SpecialPage {
                 );
                 $mode_id = $dbw->insertId();
                 // Now go through skills to set up connection to new mode
-                foreach ($data['skill'] as $skill_id => $junk) {
-                    $dbw->insert(
-                        'fate_game_mode_skill',
-                        array(
-                            'game_mode_id' => $mode_id,
-                            'game_skill_id' => $skill_id
-                        )
-                    );
+                if (in_array('skill', $data)) {
+                    foreach ($data['skill'] as $skill_id => $junk) {
+                        $dbw->insert(
+                            'fate_game_mode_skill',
+                            array(
+                                'game_mode_id' => $mode_id,
+                                'game_skill_id' => $skill_id
+                            )
+                        );
+                    }
                 }
             }
         }
@@ -430,8 +426,11 @@ class SpecialFateGameConfig extends SpecialPage {
         if ($game_id) {
             $game = new FateGame($game_id);
             if ($game->register_id) {
-                $table .= Linker::link($this->getPageTitle()->getSubPage('View'), 'Return to View', array(), array( 'game_id' => $game_id ), array( 'forcearticlepath' ) );
-                $table .= $this->getApproveForm($game, $results);
+                if ($game->is_staff($user->getID()) || $user->isAllowed('fategm')) {
+                    $table .= $this->getApproveForm($game, $results);
+                } else {
+                    $table .= "<div class='error' style='font-weight: bold; color: red;'>You are not approved staff for this game.</div>";
+                }
             } else {
                 $table .= "<div class='error' style='font-weight: bold; color: red;'>No data found for that game_id; please check URL and try again.</div>";
             }
@@ -451,8 +450,11 @@ class SpecialFateGameConfig extends SpecialPage {
         if ($game_id) {
             $game = new FateGame($game_id);
             if ($game->register_id) {
-                $table .= Linker::link($this->getPageTitle()->getSubPage('View'), 'Return to View', array(), array( 'game_id' => $game_id ), array( 'forcearticlepath' ) );
-                $table .= $this->getEditGameForm($game, $results);
+                if ($game->is_staff($user->getID()) || $user->isAllowed('fategm')) {
+                    $table .= $this->getEditGameForm($game, $results);
+                } else {
+                    $table .= "<div class='error' style='font-weight: bold; color: red;'>You are not approved staff for this game.</div>";
+                }
             } else {
                 $table .= "<div class='error' style='font-weight: bold; color: red;'>No data found for that game_id; please check URL and try again.</div>";
             }
@@ -489,9 +491,13 @@ class SpecialFateGameConfig extends SpecialPage {
                 <input type='hidden' name='action' value='edit'/>
 EOT;
 
-            // Did we have errors? If show, display a big warning here
-            if (count($results['error']) > 0) {
-                $form .= "<div class='errorbox'><strong>Approval error.</strong><br/>One or more error was found. Please correct them below, and resubmit to save approvals.</div>";
+            // Errors and successes here
+            if (count($results) > 0) {
+                if (count($results['error']) > 0) {
+                    $form .= "<div class='errorbox'><strong>Approval error.</strong><br/>One or more error was found. Please correct them below, and resubmit to save approvals.</div>";
+                } else {
+                    $form .= "<div class='successbox'><strong>Approvals updated.</strong></div>";
+                }
             }
             
             // TODO: Check for characters that need to be approved
@@ -727,9 +733,13 @@ EOT;
                 <h2>Edit Game</h2>
 EOT;
 
-        // Did we have errors? If show, display a big warning here
-        if (count($results['error']) > 0) {
-            $form .= "<div class='errorbox'><strong>Editing error.</strong><br/>One or more error was found. Please correct them below, and resubmit to save edits.</div>";
+        // If we have results, either we have errors to show, or a success
+        if (count($results) > 0) {
+            if (count($results['error']) > 0) {
+                $form .= "<div class='errorbox'><strong>Editing error.</strong><br/>One or more error was found. Please correct them below, and resubmit to save edits.</div>";
+            } else {
+                $form .= "<div class='successbox'><strong>Game configuration updated.</strong></div>";
+            }
         }
         
         $form .= <<<EOT
@@ -764,7 +774,7 @@ EOT;
     private function getGameSkillsJS( $game ) {
         $js = "var skill_list = new Array();";
         foreach ($game->skills as $skill) {
-            $js .= "skill_list.push( { id: " . $skill['skill_id'] . ", mode_cost: " . $skill['mode_cost'] . ", label: '" . $skill['label'] . "' } );";
+            $js .= "skill_list.push( { id: " . $skill['skill_id'] . ", mode_cost: " . (array_key_exists('mode_code', $skill) ? $skill['mode_cost'] : 0). ", label: '" . $skill['label'] . "' } );";
         }
         return $js;
     }
@@ -845,146 +855,160 @@ EOT;
             $game = new FateGame($game_id);
             $table = '';
             if ($game->register_id) {
-                $distribution = FateGameGlobals::getSkillDistributionArray();
-                $table .= Linker::link($this->getPageTitle()->getSubPage('Edit'), 'Edit', array(), array( 'game_id' => $game_id ), array( 'forcearticlepath' ) );
-                $table .= "<table>".
-                          "<tr><td class='mw-label'>Game Name:</td><td colspan=3>$game->game_name</td></tr>".
-                          "<tr><td class='mw-label' style='vertical-align: top'>Description:</td><td colspan=3>$game->game_description</td></tr>".
-                          "<tr><td class='mw-label'>GM:</td><td>".
-                          Linker::link(Title::newFromText('User:' . $game->user_name), $game->canon_name, array(), array(), array( 'forcearticlepath' ) ) .
-                          "</td>".
-                          "<td class='mw-label' nowrap>Game Status:</td><td>$game->game_status</td></tr>".
-                          "<tr><td class='mw-label'>Created:</td><td>" . FateGameGlobals::getDisplayDate($game->create_date) . "</td>".
-                          "<td class='mw-label' nowrap>Last Modified:</td><td>" . FateGameGlobals::getDisplayDate($game->modified_date) . "</td></tr>".
-                          "<td class='mw-label' style='vertical-align: top' nowrap>Starting Aspects:</td><td colspan=3>$game->aspect_count Total";
-                if (count($game->aspects) > 0) {
-                    $table .= "<br/>";
-                    $list = array();
-                    foreach ($game->aspects as $aspect) {
-                        $list[] = $aspect['label'] . ($aspect['is_major'] ? ' (*)' : '');
-                    }
-                    $table .= implode(', ', $list);
-                }
-                $table .= "</td></tr>".
-                          "<td class='mw-label' style='vertical-align: top'>Skills:</td><td colspan=3>".
-                          "<table><tr><td class='mw-label'>Distribution Method:</td><td>" . $distribution[$game->skill_distribution] . "</td></tr>";
-                if ($game->skill_alternative) {
-                    $table .= "<tr><td class='mw-label'>Alternative Label:</td><td>$game->skill_alternative</td></tr>";
-                }
-                $table .= "<tr><td class='mw-label'>Max Starting Skill:</td><td>+$game->skill_max</td></tr>".
-                          "<tr><td class='mw-label'>Starting Points:</td><td>" . implode(', ', $game->skill_points) . "</td></tr></table></td></tr>";
-                if (count($game->skills) > 0) {
-                    $table .= "<tr><td class='mw-label' style='vertical-align: top;' nowrap>Skill List:</td><td colspan=3>";
-                    $list = array();
-                    foreach ($game->skills as $skill) {
-                        $list[] = $skill['label'] . ($skill['mode_cost'] !== null ? ' (' . $skill['mode_cost'] . ')' : '');
-                    }
-                    $table .= implode(', ', $list) . "</td></tr>";
-                }
-                if (count($game->modes) > 0) {
-                    $table .= "<tr><td class='mw-label' style='vertical-align: top'>Defined Modes:</td><td colspan=3>".
-                              "<table class='wikitable'><tr><th>Mode Name</th><th>Cost</th><th>Is Weird?</th><th>Associated Skills</th></tr>";
-                    foreach ($game->modes as $mode) {
-                        $skill_list = array();
-                        foreach ($mode['skill_list'] as $sk) {
-                            $skill_list[] = $game->skills_by_id[$sk]['label'];
+                if ($game->is_staff($user->getID()) || $user->isAllowed('fategm')) {
+                    $distribution = FateGameGlobals::getSkillDistributionArray();
+                    $table .= "<table>".
+                              "<tr><td class='mw-label'>Game Name:</td><td colspan=3>$game->game_name</td></tr>".
+                              "<tr><td class='mw-label' style='vertical-align: top'>Description:</td><td colspan=3>$game->game_description</td></tr>".
+                              "<tr><td class='mw-label'>GM:</td><td>".
+                              Linker::link(Title::newFromText('User:' . $game->user_name), $game->canon_name, array(), array(), array( 'forcearticlepath' ) ) .
+                              "</td>".
+                              "<td class='mw-label' nowrap>Game Status:</td><td>$game->game_status</td></tr>".
+                              "<tr><td class='mw-label'>Created:</td><td>" . FateGameGlobals::getDisplayDate($game->create_date) . "</td>".
+                              "<td class='mw-label' nowrap>Last Modified:</td><td>" . FateGameGlobals::getDisplayDate($game->modified_date) . "</td></tr>".
+                              "<tr><td class='mw-label' style='vertical-align: top' nowrap>Staff:</td><td colspan=3>";
+                    if (count($game->staff) > 0) {
+                        $list = array();
+                        foreach ($game->staff as $staff) {
+                            $list[] = Linker::link(Title::newFromText('User:' . $staff->user_name), $staff->canon_name, array(), array(), array( 'forcearticlepath' ) );
                         }
-                        asort($skill_list);
-                        $table .= "<tr><td style='vertical-align: top'>" . $mode['label'] . "</td>".
-                                  "<td style='vertical-align: top'>" . $mode['cost'] . "</td>".
-                                  "<td style='vertical-align: top'>" . ($mode['is_weird'] ? 'Yes' : 'No') . "</td>".
-                                  "<td style='vertical-align: top'>" . implode(', ', $skill_list) . "</td></tr>";
+                        $table .= implode(', ', $list);
+                    } else {
+                        $table .= "None";
                     }
-                    $table .= "</table></td></tr>";
-                }
-                $table .= "<tr><td class='mw-label' nowrap>Turn Order Skills:</td>";
-                if (count($game->turn_order) > 0) {
-                    $first = 1;
-                    foreach ($game->turn_order as $index => $track) {
-                        if (!$first) {
-                            $table .= "<tr><td>&nbsp;</td>";
+                    $table .= "</td></tr>".
+                              "<tr><td class='mw-label' style='vertical-align: top' nowrap>Starting Aspects:</td><td colspan=3>$game->aspect_count Total";
+                    if (count($game->aspects) > 0) {
+                        $table .= "<br/>";
+                        $list = array();
+                        foreach ($game->aspects as $aspect) {
+                            $list[] = $aspect['label'] . ($aspect['is_major'] ? ' (*)' : '');
                         }
-                        $first = 0;
-                        $table .= "<td class='mw-label'><strong>" . ($index == 1 ? 'Physical' : 'Mental') . ":</strong></td>";
-                        $skills = array();
-                        foreach ($track as $skill_id) {
-                            $skills[] = $game->skills_by_id[$skill_id]['label'];
+                        $table .= implode(', ', $list);
+                    }
+                    $table .= "</td></tr>".
+                              "<td class='mw-label' style='vertical-align: top'>Skills:</td><td colspan=3>".
+                              "<table><tr><td class='mw-label'>Distribution Method:</td><td>" . $distribution[$game->skill_distribution] . "</td></tr>";
+                    if ($game->skill_alternative) {
+                        $table .= "<tr><td class='mw-label'>Alternative Label:</td><td>$game->skill_alternative</td></tr>";
+                    }
+                    $table .= "<tr><td class='mw-label'>Max Starting Skill:</td><td>+$game->skill_max</td></tr>".
+                              "<tr><td class='mw-label'>Starting Points:</td><td>" . implode(', ', $game->skill_points) . "</td></tr></table></td></tr>";
+                    if (count($game->skills) > 0) {
+                        $table .= "<tr><td class='mw-label' style='vertical-align: top;' nowrap>Skill List:</td><td colspan=3>";
+                        $list = array();
+                        foreach ($game->skills as $skill) {
+                            $list[] = $skill['label'] . ($skill['mode_cost'] !== null ? ' (' . $skill['mode_cost'] . ')' : '');
                         }
-                        $table .= "<td colspan=2>" . implode(', ', $skills) . "</td></tr>";
+                        $table .= implode(', ', $list) . "</td></tr>";
                     }
-                } else {
-                    $table .= "<td colspan=3>Undefined</td></tr>";
-                }
-                $table .= "<tr><td class='mw-label' nowrap>Refresh Rate:</td><td colspan=3>$game->refresh_rate</td></tr>".
-                          "<tr><td class='mw-label' nowrap>Initial Stunt Slots:</td><td colspan=3>$game->stunt_count</td></tr>".
-                          "<tr><td class='mw-label' nowrap>Initial Stress Boxes:</td><td colspan=3>$game->stress_count</td></tr>";
-                if (count($game->stress_tracks) > 0) {
-                    $table .= "<tr><td class='mw-label'>Stress Tracks:</td><td colspan=3>";
-                    $list = array();
-                    foreach ($game->stress_tracks as $track) {
-                        $list[] = $track['label'];
-                    }
-                    $table .= implode(', ', $list) . "</td></tr>";
-                }
-                if ($game->use_consequences) {
-                    $table .= "<tr><td class='mw-label'>Consequences:</td><td colspan=3>";
-                    $list = array();
-                    foreach ($game->consequences as $consequence) {
-                        $list[] = $consequence['label'] . ' (' . $consequence['display_value'] . ')';
-                    }
-                    $table .= implode(', ', $list) . "</td></tr>";
-                } else {
-                    $table .= "<tr><td class='mw-label'>Conditions:</td><td colspan=3></td></tr>";
-                }     
-                $table .= "<tr><td class='mw-label'>Private Sheets:</td><td colspan=3>" . ($game->private_sheet ? 'Yes' : 'No') . "</td></tr>";
-                $table .= "<tr><td class='mw-label'>Use Atomic Robo style Refresh (Aspect count, don't subtract stunts):</td><td colspan=3>".
-                          ($game->use_robo_refresh ? 'Yes' : 'No') . "</td></tr>";
-                $table .= "</table>";
-                
-                if(count($game->fractals) > 0) {
-                    /* Handle Characters first, if they exist */
-                    if (count($game->fractals['Character']) > 0) {
-                        $characters = $game->fractals['Character'];
-                        $table .= "<table class='wikitable'><caption>Characters<caption>".
-                                  "<tr><th>Character Name</th><th>Wiki Name</th><th>Status</th></tr>";
-                        foreach ($characters as $character) {
-                            $table .= "<tr><td>" . 
-                                      Linker::link(Title::newFromText('Special:FateStats')->getSubpage("ViewSheet"), $character[name], array(), array( 'fractal_id' => $character[fractal_id] ), array ( 'forcearticlepath' ) ) .
-                                      "</td><td>".
-                                      Linker::link(Title::newFromText('User:' . $character[user_name]), $character[user_name], array(), array(), array( 'forcearticlepath' ) ) .
-                                      "</td><td>";
-                            if ($character[frozen_date]) {
-                                $table .= 'Frozen on ' . FateGameGlobals::getDisplayDate($character[frozen_date]);
-                            } elseif ($character[approve_date]) {
-                                $table .= 'Approved on ' . FateGameGlobals::getDisplayDate($character[approve_date]);
-                            } elseif ($character[submit_date]) {
-                                $table .= 'Submitted on ' . FateGameGlobals::getDisplayDate($character[submit_date]);
-                            } else {
-                                $table .= 'Created on ' . FateGameGlobals::getDisplayDate($character[create_date]);
+                    if (count($game->modes) > 0) {
+                        $table .= "<tr><td class='mw-label' style='vertical-align: top'>Defined Modes:</td><td colspan=3>".
+                                  "<table class='wikitable'><tr><th>Mode Name</th><th>Cost</th><th>Is Weird?</th><th>Associated Skills</th></tr>";
+                        foreach ($game->modes as $mode) {
+                            $skill_list = array();
+                            foreach ($mode['skill_list'] as $sk) {
+                                $skill_list[] = $game->skills_by_id[$sk]['label'];
                             }
-                            $table .= "</td></tr>";
+                            asort($skill_list);
+                            $table .= "<tr><td style='vertical-align: top'>" . $mode['label'] . "</td>".
+                                      "<td style='vertical-align: top'>" . $mode['cost'] . "</td>".
+                                      "<td style='vertical-align: top'>" . ($mode['is_weird'] ? 'Yes' : 'No') . "</td>".
+                                      "<td style='vertical-align: top'>" . implode(', ', $skill_list) . "</td></tr>";
                         }
-                        $table .= "</table>";
+                        $table .= "</table></td></tr>";
                     }
-                    /* Now look to see if there are any other fractals, and display appropriately */
-                    foreach ($game->fractals as $key => $array) {
-                        if ($key == 'Character') {
-                            continue;
+                    $table .= "<tr><td class='mw-label' nowrap>Turn Order Skills:</td>";
+                    if (count($game->turn_order) > 0) {
+                        $first = 1;
+                        foreach ($game->turn_order as $index => $track) {
+                            if (!$first) {
+                                $table .= "<tr><td>&nbsp;</td>";
+                            }
+                            $first = 0;
+                            $table .= "<td class='mw-label'><strong>" . ($index == 1 ? 'Physical' : 'Mental') . ":</strong></td>";
+                            $skills = array();
+                            foreach ($track as $skill_id) {
+                                $skills[] = $game->skills_by_id[$skill_id]['label'];
+                            }
+                            $table .= "<td colspan=2>" . implode(', ', $skills) . "</td></tr>";
                         }
-                        $table .= "<table class='wikitable'><caption>$key</caption>".
-                                  "<tr><th>Name</th><th>Is Private?</th><th>Created On</th>";
-                        foreach ($array as $fractal) {
-                            $table .= "<tr><td>" .
-                                      Linker::link(Title::newFromText('Special:FateStats')->getSubpage("View"), $fractal[name], array(), array( 'fractal_id' => $fractal[fractal_id] ), array ( 'forcearticlepath' ) ) .
-                                      "</td><td>" . ($fractal[is_private] ? 'Yes' : 'No' ) . "</td>".
-                                      "<td>" . FateGameGlobals::getDisplayDate($fractal[create_date]) . "</td></tr>";
-                        }
-                        $table .= "</table>";
+                    } else {
+                        $table .= "<td colspan=3>Undefined</td></tr>";
                     }
-                }
-                $table .= Linker::link(Title::newFromText('Special:FateStats')->getSubpage("Create"), 'Create New Fractal', array(), array( 'game_id' => $game_id ), array ( 'forcearticlepath' ) );
-                if ($game->pending_stat_approvals) {
-                    $table .= "<br/>" . Linker::link($this->getPageTitle()->getSubPage('Approval'), 'You have pending approvals', array(), array( 'game_id' => $game_id ), array( 'forcearticlepath' ) );
+                    $table .= "<tr><td class='mw-label' nowrap>Refresh Rate:</td><td colspan=3>$game->refresh_rate</td></tr>".
+                              "<tr><td class='mw-label' nowrap>Initial Stunt Slots:</td><td colspan=3>$game->stunt_count</td></tr>".
+                              "<tr><td class='mw-label' nowrap>Initial Stress Boxes:</td><td colspan=3>$game->stress_count</td></tr>";
+                    if (count($game->stress_tracks) > 0) {
+                        $table .= "<tr><td class='mw-label'>Stress Tracks:</td><td colspan=3>";
+                        $list = array();
+                        foreach ($game->stress_tracks as $track) {
+                            $list[] = $track['label'];
+                        }
+                        $table .= implode(', ', $list) . "</td></tr>";
+                    }
+                    if ($game->use_consequences) {
+                        $table .= "<tr><td class='mw-label'>Consequences:</td><td colspan=3>";
+                        $list = array();
+                        foreach ($game->consequences as $consequence) {
+                            $list[] = $consequence['label'] . ' (' . $consequence['display_value'] . ')';
+                        }
+                        $table .= implode(', ', $list) . "</td></tr>";
+                    } else {
+                        $table .= "<tr><td class='mw-label'>Conditions:</td><td colspan=3></td></tr>";
+                    }     
+                    $table .= "<tr><td class='mw-label'>Private Sheets:</td><td colspan=3>" . ($game->private_sheet ? 'Yes' : 'No') . "</td></tr>";
+                    $table .= "<tr><td class='mw-label'>Use Atomic Robo style Refresh (Aspect count, don't subtract stunts):</td><td colspan=3>".
+                              ($game->use_robo_refresh ? 'Yes' : 'No') . "</td></tr>";
+                    $table .= "</table>";
+                    
+                    if(count($game->fractals) > 0) {
+                        /* Handle Characters first, if they exist */
+                        if (count($game->fractals['Character']) > 0) {
+                            $characters = $game->fractals['Character'];
+                            $table .= "<table class='wikitable'><caption>Characters<caption>".
+                                      "<tr><th>Character Name</th><th>Wiki Name</th><th>Status</th></tr>";
+                            foreach ($characters as $character) {
+                                $table .= "<tr><td>" . 
+                                          Linker::link(Title::newFromText('Special:FateStats')->getSubpage("ViewSheet"), $character[name], array(), array( 'fractal_id' => $character[fractal_id] ), array ( 'forcearticlepath' ) ) .
+                                          "</td><td>".
+                                          Linker::link(Title::newFromText('User:' . $character[user_name]), $character[user_name], array(), array(), array( 'forcearticlepath' ) ) .
+                                          "</td><td>";
+                                if ($character[frozen_date]) {
+                                    $table .= 'Frozen on ' . FateGameGlobals::getDisplayDate($character[frozen_date]);
+                                } elseif ($character[approve_date]) {
+                                    $table .= 'Approved on ' . FateGameGlobals::getDisplayDate($character[approve_date]);
+                                } elseif ($character[submit_date]) {
+                                    $table .= 'Submitted on ' . FateGameGlobals::getDisplayDate($character[submit_date]);
+                                } else {
+                                    $table .= 'Created on ' . FateGameGlobals::getDisplayDate($character[create_date]);
+                                }
+                                $table .= "</td></tr>";
+                            }
+                            $table .= "</table>";
+                        }
+                        /* Now look to see if there are any other fractals, and display appropriately */
+                        foreach ($game->fractals as $key => $array) {
+                            if ($key == 'Character') {
+                                continue;
+                            }
+                            $table .= "<table class='wikitable'><caption>$key</caption>".
+                                      "<tr><th>Name</th><th>Is Private?</th><th>Created On</th>";
+                            foreach ($array as $fractal) {
+                                $table .= "<tr><td>" .
+                                          Linker::link(Title::newFromText('Special:FateStats')->getSubpage("View"), $fractal[name], array(), array( 'fractal_id' => $fractal[fractal_id] ), array ( 'forcearticlepath' ) ) .
+                                          "</td><td>" . ($fractal[is_private] ? 'Yes' : 'No' ) . "</td>".
+                                          "<td>" . FateGameGlobals::getDisplayDate($fractal[create_date]) . "</td></tr>";
+                            }
+                            $table .= "</table>";
+                        }
+                    }
+                    $table .= Linker::link(Title::newFromText('Special:FateStats')->getSubpage("Create"), 'Create New Fractal', array(), array( 'game_id' => $game_id ), array ( 'forcearticlepath' ) );
+                    if ($game->pending_stat_approvals) {
+                        $table .= "<br/>" . Linker::link($this->getPageTitle()->getSubPage('Approval'), 'You have pending approvals', array(), array( 'game_id' => $game_id ), array( 'forcearticlepath' ) );
+                    }
+                } else {
+                    $table .= "<div class='error' style='font-weight: bold; color: red;'>You are not approved staff for this game.</div>";
                 }
             } else {
                 $table .= "<div class='error' style='font-weight: bold; color: red'>No data found for that game_id; please check URL and try again.</div>";
@@ -1003,7 +1027,9 @@ EOT;
         
         $games = $dbr->select(
             array( 'g' => 'fate_game',
-                   'r' => 'muxregister_register' ),
+                   'r' => 'muxregister_register',
+                   's' => 'fate_game_staff',
+                   'r2' => 'muxregister_register' ),
             array( 'r.register_id',
                    'r.user_name',
                    'r.canon_name',
@@ -1013,8 +1039,11 @@ EOT;
                    'g.game_description',
                    'g.game_status',
                    'g.create_date',
-                   'g.modified_date'),
-            array( 'r.register_id = g.register_id' ),
+                   'g.modified_date',
+                   'group_concat(r2.user_id separator " ") as staff' ),
+            array( 'r.register_id = g.register_id',
+                   'g.game_id = s.game_id',
+                   's.register_id = r2.register_id' ),
             __METHOD__,
             array( 'ORDER BY' => 'g.game_name' )
         );
@@ -1026,8 +1055,9 @@ EOT;
             $table .= "<table class='wikitable' >".
                       "<tr><th>Game Name</th><th>Game Master</th><th>Description</th><th>Status</th><th>Created</th><th>Last Modified</th></tr>";
             foreach ($games as $game) {
+                $staff = explode(' ', $game->{staff});
                 $table .= "<tr><td valign='top'>";
-                if ($user->getID() == $game->{user_id} || $user->isAllowed('fategm')) {
+                if ($user->getID() == $game->{user_id} || in_array($user->getID(), $staff) || $user->isAllowed('fategm')) {
                     $table .= Linker::link($this->getPageTitle()->getSubpage("View"), $game->{game_name}, array(), array( 'game_id' => $game->{game_id} ), array ( 'forcearticlepath' ) );
                 } else {
                     $table .= $game->{game_name};
@@ -1042,7 +1072,6 @@ EOT;
             }
             $table .= "</table>";
         }
-        
         $out->addHTML($table);
     }
     

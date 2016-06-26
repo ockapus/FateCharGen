@@ -15,6 +15,7 @@ class FateGameGlobals {
     const STAT_FATE = 7;
     const STAT_REFRESH = 8;
     const STAT_MODE = 9;
+    const STAT_MOOK = 10;
     
     function getSkillDistributionArray() {
         $array = array();
@@ -61,6 +62,14 @@ class FateGameGlobals {
         return $array;
     }
     
+    function getMookLevels() {
+        $array = array();
+        $array[-2] = 'Bad';
+        $array[2]  = 'Skilled';
+        
+        return $array;
+    }
+    
     function getStatLabels() {
         $array = array();
         $array[self::STAT_ASPECT] = 'Aspects';
@@ -72,6 +81,7 @@ class FateGameGlobals {
         $array[self::STAT_FATE] = 'Fate Points';
         $array[self::STAT_REFRESH] = 'Refresh Rate';
         $array[self::STAT_MODE] = 'Modes';
+        $array[self::STAT_MOOK] = 'Mook Skills';
         
         return $array;
     }
@@ -87,6 +97,7 @@ class FateGameGlobals {
         $array['fate'] = self::STAT_FATE;
         $array['refresh'] = self::STAT_REFRESH;
         $array['mode'] = self::STAT_MODE;
+        $array['mook'] = self::STAT_MOOK;
         
         return $array;
     }

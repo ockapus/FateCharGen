@@ -211,6 +211,23 @@ class FateGame {
                 }
             }
             
+            $staff_list = $dbr->select(
+                array( 's' => 'fate_game_staff',
+                       'r' => 'muxregister_register' ),
+                array( 'r.user_name',
+                       'r.user_id',
+                       'r.character_dbref',
+                       'r.canon_name' ),
+                array( 'r.register_id = s.register_id',
+                       's.game_id' => $game_id )
+            );
+            $this->staff = array();
+            if ($staff_list->numRows() > 0) {
+                foreach ($staff_list as $staff) {
+                    $this->staff[$staff->{user_id}] = $staff;
+                }
+            }
+            
             $fractal_list = $dbr->select(
                 array( 'f' => 'fate_fractal',
                        'r' => 'muxregister_register',
@@ -259,5 +276,16 @@ class FateGame {
                 }
             }
         }
+    }
+    
+    public function is_staff( $user_id ) {
+        $found = false;
+        if ($this->user_id == $user_id) {
+            $found = true;
+        } elseif (array_key_exists($user_id, $this->staff)) {
+            $found = true;
+        }
+        
+        return $found;
     }
 }

@@ -8,7 +8,7 @@
 
 class SpecialFateStats extends SpecialPage {
     public function __construct() {
-        parent::__construct( 'FateStats', 'fategm' );
+        parent::__construct( 'FateStats' );
     }
 
     private $edit_data = array(
@@ -35,6 +35,14 @@ class SpecialFateStats extends SpecialPage {
                 'value' => array( 'label' => 'Rating', 'size' => 1 )
             ),
             'required' => array( 'label', 'value' ),
+            'unique' => 0
+        ),
+        FateGameGlobals::STAT_MOOK => array(
+            'fields' => array(
+                'field' => array( 'label' => 'Skill', 'size' => 35 ),
+                'value' => array( 'label' => 'Rating', 'type' => 'select' )
+            ),
+            'required' => array( 'field', 'value' ),
             'unique' => 0
         ),
         FateGameGlobals::STAT_STUNT => array(
@@ -102,14 +110,11 @@ class SpecialFateStats extends SpecialPage {
         
         $this->setHeaders();
         $out->setPageTitle( $this->msg( 'fatestats' ) );
-        $out->wrapWikiMsg( '=$1=' , array( 'fatestats' ) );
         
         //$out->addHelpLink('http://aliencity.org/wiki/Extension:FateCharGen', true);
         
         if ($user->isAnon()) {
             $out->addHTML("<div class='error' style='font-weight: bold; color: red'>You must be logged in to access this page.</div>");
-        } elseif (!$user->isAllowed('fategm')) {
-            $out->addHTML("<div class='error' style='font-weight: bold; color: red'>You don't have permission to access this page.</div>");
         } else {
             $fractal_id = $request->getInt('fractal_id');
             $sheet = $request->getInt('sheet');
@@ -152,7 +157,7 @@ class SpecialFateStats extends SpecialPage {
                     $this->viewMilestones($fractal_id);
                 }
             } else {
-                $this->listAllFractals();
+                $this->listCharacters();
             }
         }   
     }
@@ -278,8 +283,11 @@ class SpecialFateStats extends SpecialPage {
         if ($fractal_id) {
             $fractal = new FateFractal($fractal_id);
             if ($fractal->name) {
-                // TODO: Make sure only user can edit their milestones at some point
-                $table .= $this->getMilestoneForm($fractal, $results);
+                if ($fractal->user_id == $user->getID() || $fractal->fate_game->is_staff($user->getID()) || $user->isAllowed('fategm')) {
+                    $table .= $this->getMilestoneForm($fractal, $results);
+                } else {
+                    $table .= "<div class='error' style='font-weight: bold; color: red'>You don't have permission to view milestones for this character.</div>";
+                }
             } else {
                 $table .= "<div class='error' style='font-weight: bold; color: red'>No data found for that fractal_id; please check URL and try again.</div>";
             }
@@ -314,6 +322,11 @@ EOT;
             }
         }
         
+        // If this isn't our character, make sure we label that
+        if ($fractal->user_id != $user->getID()) {
+            $form .= "<div class='errorbox'><strong>WARNING: This character does not belong to you. Milestones visible for troubleshooting purposes only.</strong></div>";
+        }
+        
         $form .= $fractal->getFractalBlock(1);
         
         $submit = 0;
@@ -332,17 +345,17 @@ EOT;
                     }
                 }
                 if (!$found) {
-                    if (array_key_exists(FateGameGlobals::STAT_ASPECT, $fractal->pending_stats)) {
-                        $remaining--;
-                        $pending = new stdClass();
+                    $remaining--;
+                    $pending = new stdClass();
+                    if (array_key_exists(FateGameGlobals::STAT_ASPECT, $fractal->pending_stats)) {    
                         foreach ($fractal->pending_stats[FateGameGlobals::STAT_ASPECT] as $pending_aspect) {
                             if ($pending_aspect->{parent_id} == $aspect['aspect_id']) {
                                 $pending = $pending_aspect;
                                 break;
                             }
                         }
-                        $form .= $this->getMilestoneRow(FateGameGlobals::STAT_ASPECT, $results, $aspect, $pending);
                     }
+                    $form .= $this->getMilestoneRow(FateGameGlobals::STAT_ASPECT, $results, $aspect, $pending);
                 }
             }
             
@@ -811,7 +824,7 @@ EOT;
     }
 
     
-    private function listAllFractals() {
+    private function listCharacters() {
         $user = $this->getUser();
         $out  = $this->getOutput();
         $dbr = wfGetDB(DB_SLAVE);
@@ -835,7 +848,8 @@ EOT;
                    'f.submit_date',
                    'f.approve_date',
                    'f.frozen_date' ),
-            array( ),
+            array( 'user_id' => $user->getID(),
+                   'fractal_type' => 'Character' ),
             __METHOD__,
             array( 'ORDER BY' => array ('fractal_type', 'fractal_name', 'canon_name' ) ),
             array( 'r' => array( 'LEFT JOIN', 'f.register_id = r.register_id' ),
@@ -843,38 +857,32 @@ EOT;
         );
         
         $table = "<table class='wikitable'>".
-                 "<tr><th>Fractal Name</th><th>Fractal Type</th><th>Game</th><th>Player</th><th>Status</th></tr>";
+                 "<tr><th>Character Name</th><th>Game</th><th>Status</th></tr>";
         if ($fractal_list->numRows() == 0) {
-            $table .= "<tr><td colspan=100%>No Fractals Found</td></tr>";
+            $table .= "<tr><td colspan=100%>No Characters Found</td></tr>";
         } else {
             foreach ($fractal_list as $fractal) {
-                $subpage = "View";
+                $subpage = "ViewSheet";
                 $status = "Created";
                 $status_date = $fractal->create_date;
-                $name = $fractal->fractal_name;
-                if ($fractal->fractal_type == 'Character') {
-                    $subpage = "ViewSheet";
-                    $name = $fractal->canon_name;
-                    if ($fractal->frozen_date) {
-                        $status = "Frozen";
-                        $status_date = $fractal->frozen_date;
-                    } elseif ($fractal->approve_date) {
-                        $status = "Approved";
-                        $status_date = $fractal->approve_date;
-                    } elseif ($fractal->submit_date) {
-                        $status = "Submitted";
-                        $status_date = $fractal->submit_date;
-                    }
+                $name = $fractal->canon_name;
+                if ($fractal->frozen_date) {
+                    $status = "Frozen";
+                    $status_date = $fractal->frozen_date;
+                } elseif ($fractal->approve_date) {
+                    $status = "Approved";
+                    $status_date = $fractal->approve_date;
+                } elseif ($fractal->submit_date) {
+                    $status = "Submitted";
+                    $status_date = $fractal->submit_date;
                 }
                 $table .= "<tr><td>" .
                     Linker::link($this->getPageTitle()->getSubpage($subpage), $name, array(), array( 'fractal_id' => $fractal->fractal_id ), array( 'forcearticalpath' ) ) .
-                    "</td><td>" . $fractal->fractal_type . "</td><td>" .
-                    Linker::link(Title::newFromText('Special:FateGameConfig')->getSubpage('View'), $fractal->game_name, array(), array( 'game_id' => $fractal->game_id ), array( 'forcearticlepath' ) ).
                     "</td><td>";
-                if ($fractal->canon_name) {
-                    $table .= Linker::link(Title::newFromText('User:' . $fractal->user_name), $fractal->user_name, array(), array(), array( 'forcearticlepath' ) );
+                if ($user->isAllowed('fatestaff')) {
+                    $table .= Linker::link(Title::newFromText('Special:FateGameConfig')->getSubpage('View'), $fractal->game_name, array(), array( 'game_id' => $fractal->game_id ), array( 'forcearticlepath' ) );
                 } else {
-                    $table .= "&nbsp;";
+                    $table .= $fractal->game_name;
                 }
                 $table .= "</td><td>" . $status . " on " . FateGameGlobals::getDisplayDate($status_date) . "</td></tr>";
             }
@@ -891,7 +899,11 @@ EOT;
         if ($fractal_id) {
             $fractal = new FateFractal($fractal_id);
             if ($fractal->name) {
-                $table .= $this->getFractalEditForm($fractal, $sheet, $results);
+                if ($user->isAllowed('fategm') || $fractal->fate_game->is_staff($user->getID())) {
+                    $table .= $this->getFractalEditForm($fractal, $sheet, $results);
+                } else {
+                    $table .= "<div class='error' style='font-weight: bold; color: red'>You do not have permission to edit this fractal.</div>";
+                }
             } else {
                 $table .= "<div class='error' style='font-weight: bold; color: red'>No data found for that fractal_id; please check URL and try again.</div>";
             }
@@ -919,6 +931,7 @@ EOT;
         $game_modes = '';
         $skills_array = '';
         $mode_levels = '';
+        $mook_levels = $this->getMookLevelsJS();
         if ($fractal->fate_game->skill_distribution == FateGameGlobals::SKILL_DISTRIBUTION_MODES) {
             $game_modes = $this->getGameModesJS($fractal);
             $mode_levels = $this->getModeLevelsJS();
@@ -930,10 +943,12 @@ EOT;
                 var TYPE_CONDITION = {$const['condition']};
                 var TYPE_MODE = {$const['mode']};
                 var TYPE_SKILL = {$const['skill']};
+                var TYPE_MOOK = {$const['mook']};
                 $condition_categories
                 $game_modes
                 $mode_levels
                 $game_skills
+                $mook_levels
                 
                 var edit_data = new Array();
                 edit_data[{$const['aspect']}] = {
@@ -958,6 +973,14 @@ EOT;
                         value: { label: 'Rating', size: 1 },
                     },
                     required: [ 'label', 'value' ],
+                    unique: 0
+                };
+                edit_data[{$const['mook']}] = {
+                    fields: {
+                        field: { label: 'Skill', size: 35 },
+                        value: { label: 'Rating', type: 'select' }
+                    },
+                    required: [ 'field', 'value' ],
                     unique: 0
                 };
                 edit_data[{$const['stunt']}] = {
@@ -1067,6 +1090,8 @@ EOT;
                         cell.appendChild(createInputSelect(field_info, name, stat_type, new_id, modeList));
                     } else if (stat_type == TYPE_SKILL && field_info.type == 'select') {
                         cell.appendChild(createInputSelect(field_info, name, stat_type, new_id, skillList));
+                    } else if (stat_type == TYPE_MOOK && field_info.type == 'select') {
+                        cell.appendChild(createInputSelect(field_info, name, stat_type, new_id, mookLevels));
                     } else if (stat_type == TYPE_SKILL && field_info.type == 'rankselect') {
                         modeLevelList = getModeLevelList(mode_value);
                         cell.appendChild(createInputSelect(field_info, name, stat_type, new_id, modeLevelList, mode_skill_label, mode_value));
@@ -1313,6 +1338,15 @@ EOT;
         return $js;
     }
     
+    private function getMookLevelsJS() {
+        $array = FateGameGlobals::getMookLevels();
+        $js = "var mookLevels = new Array();";
+        foreach ($array as $key => $value) {
+            $js .= "mookLevels[$key] = '$value';";
+        }
+        return $js;
+    }
+    
     private function getEditStatRow( $stat_id, $stat_data, $stat, $fate_game, $results, $new_count = 0 ) {
         $new = '';
         $oninput = '';
@@ -1366,6 +1400,14 @@ EOT;
                 foreach ($fate_game->skills as $skill) {
                     $selected = ($value == $skill['label'] ? 'selected' : '');
                     $row .= "<option value='" . $skill['skill_id'] . "' $selected>" . $skill['label'] . "</option>";
+                }
+                $row .= "</select></td>";
+            } elseif ($stat_id == FateGameGlobals::STAT_MOOK && $field_data['type'] == 'select') {
+                $levels = FateGameGlobals::getMookLevels();
+                $row .= "<td class='mw-input'><select id='ef$name' name='$name' $onchange $error>";
+                foreach ($levels as $rating => $label) {
+                    $selected = ($value == $rating ? 'selected' : '');
+                    $row .= "<option value='$rating' $selected>$label</option>";
                 }
                 $row .= "</select></td>";
             } elseif ($stat_id == FateGameGlobals::STAT_SKILL && $field_data['type'] == 'rankselect') {
@@ -1442,7 +1484,11 @@ EOT;
             $fractal = new FateFractal($fractal_id);
             $table = '';
             if ($fractal->name) {
-                $table .= $fractal->getFractalBlock();
+                if (!$fractal->is_private || $user->isAllowed('fategm') || $fractal->fate_game->is_staff($user->getID()) || $fractal->user_id == $user->getID()) {
+                    $table .= $fractal->getFractalBlock();
+                } else {
+                    $table .= "<div class='error' style='font-weight: bold; color: red'>You do not have permission to view this fractal's stats.</div>";
+                }
             } else {
                 $table .= "<div class='error' style='font-weight: bold; color: red'>No data found for that fractal_id; please check URL and try again.</div>";
             }
@@ -1460,8 +1506,11 @@ EOT;
             $fractal = new FateFractal($fractal_id);
             $table = '';
             if ($fractal->name) {
-                $table .= Linker::link($this->getPageTitle()->getSubpage('Edit'), 'Edit', array(), array( 'fractal_id' => $fractal_id, 'sheet' => 1 ), array( 'forcearticalpath' ) );
-                $table .= $fractal->getFractalSheet();
+                if (!$fractal->is_private || $user->isAllowed('fategm') || $fractal->fate_game->is_staff($user->getID()) || $fractal->user_id == $user->getID()) {
+                    $table .= $fractal->getFractalSheet();
+                } else {
+                    $table .= "<div class='error' style='font-weight: bold; color: red'>You do not have permission to view this fractal's stats.</div>";
+                }
             } else {
                 $table .= "<div class='error' style='font-weight: bold; color: red'>No data found for that fractal_id; please check URL and try again.</div>";
             }
@@ -1533,7 +1582,7 @@ EOT;
                     continue;
                 }
                 // 'Setting' is also a protected type, used to store game world-level aspects
-                if ($fractal->{fractal_type{ == 'Setting') {
+                if ($fractal->{fractal_type} == 'Setting') {
                     continue;
                 }
                 $this_list[] = "'" . $fractal->{fractal_type} . "'";
