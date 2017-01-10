@@ -1,4 +1,3 @@
-1
 <?php
 
 if (!defined('MUXREGISTER_VERSION')) {

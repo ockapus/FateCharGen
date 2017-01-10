@@ -1,0 +1,54 @@
+
+        if (array_key_exists(FateGameGlobals::STAT_MOOK, $this->stats)) {
+            $levels = FateGameGlobals::getMookLevels();
+            $last_label = '';
+            $first = 1;
+            foreach ($this->stats[FateGameGlobals::STAT_MOOK] as $mook) {
+                $this_label = $levels[$mook->{stat_value}];
+                if ($this_label != $last_label) {
+                    if (!$first) {
+                        $block .= "</td></tr>";
+                    }
+                    $block .= "<tr><td class='section_label'>$this_label (" . ($mook->{stat_value} > 0 ? '+' : '') . $mook->{stat_value} . ") at:</td><td>";
+                    $last_label = $this_label;
+                } else {
+                    $block .= ", ";
+                }
+                $block .= $mook->{stat_field};
+            }
+            if ($last_label) {
+                $block .= "</td></tr>";
+            }
+        }
+
+
++job/query
+
+$game->is_staff($user->getID()) || $user->isAllowed('fategm')
+$fractal->user_id == $user->getID()
+$fractal->is_private
+
+
+
+APPS -> created by the system. Game: same as that of generating character
+
+REQ -> via +request. Game: same as generating characteer: &hook_cre
+PITCH -> via +pitch. Game: same as generating character   &hook_cre
+
+QUERY -> via +job/query. Game: same as generating /staffer/
+
+TPS -> 
+
+&hook_oth #29=@eval [if([hasattr(%1,_fate_stats)],[pemit(#6,[locate(#412, Game [u([u(%1/_fate_stats)]/game_id)],iT)])],[pemit(#6,Fail)])]
+
+
+&hook_oth #29=@if [hasttr(%1,_fate_stats)]={@set %0=game:[setr(g,[locate(#412,Game [u([u(%1/_fate_stats)]/game_id)],iT)])];@set %qg=jobaccess:[map(#15/FN_OBJID,[setunion([u(%gq/game_staff)],[u(%qg,game_owner)])])]}
+
+&summary #29=[rjust(ansi(hc,Game:),10)]%b[ifelse(u(%va/FN_HASATTRP,%0,GAME),[u([get(%0/GAME)]/game_name)],Unset)]%r
+&summary_order #29=GAME
+&LOG_GAME #29=[ifelse([u(%va/FN_HASATTRP,%0,GAME)],[u([get(%0/GAME)]/game_name)],Unset)]
+&ACCESS_GAME #29=[u(%va/FN_STAFFALL,%0)]
+&ERROR_GAME #29=Couldn't find a game that matches.
+&PROCESS_GAME #29=[setq(3,GAME)][setq(1,[u(#425/fn_find_game,%0)])][if([isdbref(%q1)],1,0)]
+
+&help #29=%rThis bucket is for pending requests from characters, generally related to the course of current plots or looking to investigate new ones.%r%r[u(%va/FN_BREAK,ansi(hc,Settings for +job/sumset))]%r[ljust(ansi(h,GAME),10)] Accepts either a game number based on the +games list, or a matching name. This should be automatically set in most cases, and makes certain that staff for the listed game have proper access to this job.

@@ -25,7 +25,20 @@
         ],
         "SkinTemplateNavigation::SpecialPage": [
             "FateCharGenHooks::addContentActions"
+        ],
+        "ParserFirstCallInit": [
+            "FateCharGenHooks::onParserSetup"
         ]
+    },
+    "ResourceModules": {
+        "ext.FateCharGen.styles": {
+            "position": "top",
+            "styles": "css/ext.FateCharGen.styles.css"
+        }
+    },
+    "ResourceFileModulePaths": {
+        "localBasePath": "modules",
+        "remoteExtPath": "FateCharGen/modules"
     },
     "MessagesDirs": {
         "FateCharGen": [

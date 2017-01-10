@@ -1,0 +1,7 @@
+#fractalblock { border: 2px solid #295079; width: auto; margin: 0 0 0.5em 0p; padding: 5px 15px; }
+#fractalblock .name { font-family: Tahoma, Geneva, sans-serif; font-weight: bold; text-align: center; font-size: 18px; text-transform: uppercase; }
+#fractalblock .section_label { vertical-align: top; font-weight: bold; white-space: nowrap; }
+#fractalblock .stunt_name { font-weight: bold; }
+#fractalblock .aspect_field { font-weight: bold; font-style: italic; }
+
+div.error { border: 1px solid #FF0000; color: #FF0000; background-color: #FFB6C1; font-weight: bold; margin-top: 5px; padding: 5px; }

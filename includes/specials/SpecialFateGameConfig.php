@@ -628,11 +628,13 @@ EOT;
         $form_url = $this->getPageTitle()->getSubPage('Edit')->getLinkURL();
         $game_id = $game->game_id;
         $skill_list = $this->getGameSkillsJS( $game );
+        $staff_list = $this->getAvailableStaffJS();
         $const = FateGameGlobals::getStatConsts();
         
         $form .= <<<EOT
             <script type='text/javascript'>
                 $skill_list
+                $staff_list
                 var TYPE_MODE = {$const['mode']};
                 
                 function addNewModeSection( id ) {
@@ -754,7 +756,22 @@ EOT;
                     </tbody>
                 </table>
             </fieldset>
+            <fieldset>
+                <legend>Game Staff</legend>
+                <table>
+                    <tbody>
 EOT;
+        
+        if (count($game->staff) > 0) {
+            foreach ($game->staff as $staff) {
+                $form .= "<tr><td class='mw-label'><label>Current Staff:</label></td>" .
+                         "<td><strong>" . $staff->canon_name . "</strong></td>".
+                         "<td class='mw-label'><label for='egstaff_delete_" . $staff->game_staff_id . "'>Delete:</label></td>".
+                         "<td class='mw-input'><input type='checkbox' id='egstaff_delete_" . $staff->game_staff_id . "' name='staff_delete_" .
+                         $staff->game_staff_id . "' value='1'/></td></tr>";
+            }
+        }
+        $form .= "</tbody></table></fieldset>";
         
         if ($game->skill_distribution == FateGameGlobals::SKILL_DISTRIBUTION_MODES) {
             $form .= "<fieldset><legend>Configure Modes</legend><table><tbody id='config_modes'>";
@@ -769,6 +786,31 @@ EOT;
         $form .= "<span class='mw-htmlform-submit-buttons'><input class='mw-htmlform-submit' type='submit' value='Update'/></span></form>";
         
         return $form;
+    }
+    
+    private function getAvailableStaffJS() {
+        $js = "var staff_list = new Array();";
+        $dbr = wfGetDB(DB_SLAVE);
+        
+        $data = $dbr->select(
+            array( 'r'  => 'muxregister_register',
+                   'gs' => 'fate_game_staff',
+                   'fg' => 'fate_game' ),
+            array( 'r.register_id',
+                   'r.canon_name' ),
+            array( 'gs.register_id is NULL',
+                   'fg.register_id is NULL' ),
+            __METHOD__,
+            array( 'ORDER BY' => array( 'canon_name' ) ),
+            array( 'gs' => array( 'LEFT JOIN', 'r.register_id = gs.register_id' ),
+                   'fg' => array( 'LEFT JOIN', 'r.register_id = fg.register_id' ) )
+        );
+        if ($data->numRows() > 0) {
+            foreach ($data as $staff) {
+                $js .= "staff_list.push( { id: " . $staff->{register_id} . ", canon_name: '" . $staff->{canon_name} . "' } );";
+            }
+        }
+        return $js;
     }
     
     private function getGameSkillsJS( $game ) {
@@ -1003,7 +1045,8 @@ EOT;
                             $table .= "</table>";
                         }
                     }
-                    $table .= Linker::link(Title::newFromText('Special:FateStats')->getSubpage("Create"), 'Create New Fractal', array(), array( 'game_id' => $game_id ), array ( 'forcearticlepath' ) );
+                    $table .= Linker::link(Title::newFromText('Special:FateStats')->getSubpage("Create"), 'Create New Fractal', array(), array( 'game_id' => $game_id ), array( 'forcearticlepath' ) );
+                    $table .= "<br/>" . Linker::link($this->getPageTitle()->getSubpage("InitializeCharacter"), "Initialize New Character (Temporary)", array(), array( 'game_id' => $game_id ), array( 'forcearticlepath' ));
                     if ($game->pending_stat_approvals) {
                         $table .= "<br/>" . Linker::link($this->getPageTitle()->getSubPage('Approval'), 'You have pending approvals', array(), array( 'game_id' => $game_id ), array( 'forcearticlepath' ) );
                     }
@@ -1027,9 +1070,7 @@ EOT;
         
         $games = $dbr->select(
             array( 'g' => 'fate_game',
-                   'r' => 'muxregister_register',
-                   's' => 'fate_game_staff',
-                   'r2' => 'muxregister_register' ),
+                   'r' => 'muxregister_register'),
             array( 'r.register_id',
                    'r.user_name',
                    'r.canon_name',
@@ -1039,11 +1080,8 @@ EOT;
                    'g.game_description',
                    'g.game_status',
                    'g.create_date',
-                   'g.modified_date',
-                   'group_concat(r2.user_id separator " ") as staff' ),
-            array( 'r.register_id = g.register_id',
-                   'g.game_id = s.game_id',
-                   's.register_id = r2.register_id' ),
+                   'g.modified_date' ),
+            array( 'r.register_id = g.register_id' ),
             __METHOD__,
             array( 'ORDER BY' => 'g.game_name' )
         );
@@ -1055,19 +1093,28 @@ EOT;
             $table .= "<table class='wikitable' >".
                       "<tr><th>Game Name</th><th>Game Master</th><th>Description</th><th>Status</th><th>Created</th><th>Last Modified</th></tr>";
             foreach ($games as $game) {
-                $staff = explode(' ', $game->{staff});
-                $table .= "<tr><td valign='top'>";
+                $game_staff = $dbr->selectRow(
+                    array( 's' => 'fate_game_staff',
+                           'r' => 'muxregister_register' ),
+                    array( 'group_concat(r.user_id separator " ") as staff' ),
+                    array( 's.game_id' => $game->{game_id},
+                           's.register_id = r.register_id' )
+                );
+                    
+                $staff = explode(' ', $game_staff->{staff});
+                $table .= "<tr><td valign='top' nowrap>";
                 if ($user->getID() == $game->{user_id} || in_array($user->getID(), $staff) || $user->isAllowed('fategm')) {
                     $table .= Linker::link($this->getPageTitle()->getSubpage("View"), $game->{game_name}, array(), array( 'game_id' => $game->{game_id} ), array ( 'forcearticlepath' ) );
                 } else {
                     $table .= $game->{game_name};
                 }
+                $description = str_replace('%r', '<br/>', $game->{game_description});
                 $table .= "</td><td valign='top'>".
                           Linker::link(Title::newFromText('User:' . $game->{user_name}), $game->{canon_name}, array(), array(), array( 'forcearticlepath' ) ) .
                           "</td>".
-                          "<td>" . $game->{game_description} . "</td><td valign='top'>" . $game->{game_status} . "</td>".
-                          "<td>" . FateGameGlobals::getDisplayDate($game->{create_date}) . "</td>".
-                          "<td>" . FateGameGlobals::getDisplayDate($game->{modified_date}) . "</td>".
+                          "<td>" . $description . "</td><td valign='top'>" . $game->{game_status} . "</td>".
+                          "<td valign=top nowrap>" . FateGameGlobals::getDisplayDate($game->{create_date}) . "</td>".
+                          "<td valign=top nowrap>" . FateGameGlobals::getDisplayDate($game->{modified_date}) . "</td>".
                           "</tr>";
             }
             $table .= "</table>";

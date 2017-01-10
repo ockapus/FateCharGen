@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS /*_*/fate_game_aspect (
     is_secret tinyint default NULL,
     -- Boolean: is this aspect one that can only be changed during a major milestone?
     is_major tinyint default NULL
+    -- Do we need to add back order, here?
 ) /*$wgDBTableOptions*/;
 
 CREATE INDEX /*i*/fga_game_id ON /*_*/fate_game_aspect (game_id);

@@ -123,4 +123,47 @@ class FateCharGenHooks {
         
         return true;
     }
+    
+    public static function onParserSetup( Parser $parser ) {
+        $parser->setHook( 'statblock', 'FateCharGenHooks::renderTagStatBlock' );
+        return true;
+    }
+    
+    public static function renderTagStatBlock( $input, array $args, Parser $parser, PPFrame $frame ) {
+        // TODO: Make Caching smarter later
+        $parser->disableCache();
+        $parserOutput = $parser->getOutput();
+        $parserOutput->addModuleStyles('ext.FateCharGen.styles');
+        
+        $result = '';
+        $fractal_id = $args['fractal_id'];
+        $game_name = $args['game'];
+        $character_name = $args['character'];
+        if ($fractal_id || ($game_name && $character_name)) {
+            $fractal = '';
+            if ($fractal_id) {
+                $fractal = new FateFractal($fractal_id);
+            } else {
+                $fractal = new FateFractal($game_name, $character_name);
+            }
+            if ($fractal->name) {
+                $user = $parser->getUser();
+                if ($user->isAllowed('fategm') || $fractal->fate_game->is_staff($user->getID()) || $fractal->user_id == $user->getID()) {
+                    $result .= $fractal->getFractalBlock(1);
+                } elseif ($fractal->fate_game->private_sheet) {
+                    $result .= "<div class='error'>Statblock error: Sheets are private for this game</div>";
+                } elseif ($fractal->is_private) {
+                    $result .= "<div class='error'>Statblock Error: Fractal stats are set private</div>";
+                } else {
+                    $result .= $fractal->getFractalBlock(1, 1);
+                }
+            } else {
+                $result .= "<div class='error' style='font-weight: bold; color: red'>Statblock error: Fractal not found</div>";
+            }
+        } else {
+            $result .= "<div class='error' style='font-weight: bold; color: red'>Statblock error: missing required argument(s) - fractal_id, or game and character</div>";
+        }
+        
+        return $result;
+    }
 }

@@ -16,10 +16,26 @@ class FateFractal {
     
     // TODO: Implement handling for Conditions
     
-    public function __construct( $fractal_id ) {
-        $this->fractal_id = $fractal_id;
-        
+    public function __construct( $param1, $param2 = NULL ) {
         $dbr = wfGetDB(DB_SLAVE);
+        if (is_numeric($param1)) {
+            $this->fractal_id = $param1;
+        } else {
+            $find_fractal = $dbr->selectRow(
+                array( 'f' => 'fate_fractal',
+                       'g' => 'fate_game',
+                       'r' => 'muxregister_register' ),
+                array( 'f.fractal_id' ),
+                array( 'f.register_id = r.register_id',
+                       'f.game_id = g.game_id',
+                       'g.game_name' => $param1,
+                       'r.canon_name' => $param2 )
+            );
+            if ($find_fractal) {
+                $this->fractal_id = $find_fractal->{fractal_id};
+            }
+        }
+        
         $data = $dbr->selectRow(
             array( 'f' => 'fate_fractal',
                    'r' => 'muxregister_register' ),
@@ -34,7 +50,7 @@ class FateFractal {
                    'f.submit_date',
                    'f.approve_date',
                    'f.frozen_date' ),
-            array( 'f.fractal_id' => $fractal_id ),
+            array( 'f.fractal_id' => $this->fractal_id ),
             __METHOD__,
             array(),
             array( 'r' => array( 'LEFT JOIN', 'f.register_id = r.register_id' ) )
@@ -56,7 +72,7 @@ class FateFractal {
             $stat_data = $dbr->select(
                 'fate_fractal_stat',
                 '*',
-                array( 'fractal_id' => $fractal_id ),
+                array( 'fractal_id' => $this->fractal_id ),
                 __METHOD__,
                 array( 'ORDER BY' => array( 'stat_type', 'stat_label', 'stat_field' ) )
             );
@@ -67,12 +83,15 @@ class FateFractal {
                     if (! is_array($this->stats[$stat->{stat_type}]) ) {
                         $this->stats[$stat->{stat_type}] = array();
                     }
-                    // Add info about major aspects while we're here
+                    // Add info about major/secret aspects while we're here
+                    // Overrides the is_secret flag that individual stats may have (for Stunts, for now)
                     if ($stat->{stat_type} == FateGameGlobals::STAT_ASPECT) {
                         if ($stat->{parent_id}) {
                             $stat->{is_major} = $this->fate_game->aspects_by_id[$stat->{parent_id}]['is_major'];
+                            $stat->{is_secret} = $this->fate_game->aspects_by_id[$stat->{parent_id}]['is_secret'];
                         } else {
                             $stat->{is_major} = false;
+                            $stat->{is_secret} = false;
                         }
                     }
                     $this->stats_by_id[$stat->{fractal_stat_id}] = $stat;
@@ -96,7 +115,7 @@ class FateFractal {
             $pending_data = $dbr->select(
                 'fate_pending_stat',
                 '*',
-                array( 'fractal_id' => $fractal_id ),
+                array( 'fractal_id' => $this->fractal_id ),
                 __METHOD__,
                 array( 'ORDER BY' => array( 'stat_type', 'stat_label', 'stat_field' ) )
             );
@@ -118,18 +137,22 @@ class FateFractal {
             /* Do re-sorting as necessary for various types */
             if (array_key_exists(FateGameGlobals::STAT_ASPECT, $this->stats)) {
                 @usort($this->stats[FateGameGlobals::STAT_ASPECT], function($a, $b) {
-                    if ($a->{is_major} == $b->{is_major}) {
-                        if ($a->{stat_label} && $b->{stat_label}) {
-                            return strcmp($a->{stat_label}, $b->{stat_label});
-                        } elseif ($a->{stat_label}) {
-                            return -1;
-                        } elseif ($b->{stat_label}) {
-                            return 1;
+                    if ($a->{is_secret} == $b->{is_secret}) {
+                        if ($a->{is_major} == $b->{is_major}) {
+                            if ($a->{stat_label} && $b->{stat_label}) {
+                                return strcmp($a->{stat_label}, $b->{stat_label});
+                            } elseif ($a->{stat_label}) {
+                                return -1;
+                            } elseif ($b->{stat_label}) {
+                                return 1;
+                            } else {
+                                return strcmp($a->{stat_field}, $b->{stat_field});
+                            }
                         } else {
-                            return strcmp($a->{stat_field}, $b->{stat_field});
+                            return ($a->{is_major} < $b->{is_major} ? 1 : -1);
                         }
                     } else {
-                        return ($a->{is_major} < $b->{is_major} ? 1 : -1);
+                        return ($a->{is_secret} < $b->{is_secret} ? -1 : 1);
                     }
                 });
             }
@@ -251,7 +274,7 @@ class FateFractal {
         }
     }
     
-    public function getFractalBlock( $collapse = 0 ) {
+    public function getFractalBlock( $collapse = 0, $secret = 0 ) {
         $class = '';
         $table_class = '';
         if ($collapse) {
@@ -259,13 +282,6 @@ class FateFractal {
             $table_class = "class='mw-collapsible-content'";
         }
         $block = <<< EOT
-            <style type='text/css'>
-                #fractalblock { border: 2px solid #295079; width: auto; margin: 0 0 0.5em 0p; padding: 5px 15px; }
-                #fractalblock .name { font-family: Tahoma, Geneva, sans-serif; font-weight: bold; text-align: center; font-size: 18px; text-transform: uppercase; }
-                #fractalblock .section_label { vertical-align: top; font-weight: bold; white-space: nowrap; }
-                #fractalblock .stunt_name { font-weight: bold; }
-                #fractalblock .aspect_field { font-weight: bold; font-style: italic; }
-            </style>
             <div id='fractalblock' $class>
             <div class='name'>$this->name</div>
             <table width='100%' $table_class>
@@ -275,6 +291,9 @@ EOT;
             $first = 1;
             
             foreach ($this->stats[FateGameGlobals::STAT_ASPECT] as $aspect) {
+                if ($secret && $aspect->{is_secret}) {
+                    continue;
+                }
                 $this_label = ($aspect->{stat_label} ? $aspect->{stat_label} : 'Other Aspects');
                 if ($this_label != $last_label) {
                     $last_label = $this_label;
@@ -366,6 +385,9 @@ EOT;
         if (array_key_exists(FateGameGlobals::STAT_STUNT, $this->stats)) {
             $block .= "<tr><td class='section_label'>Stunts:</td><td>";
             foreach ($this->stats[FateGameGlobals::STAT_STUNT] as $stunt) {
+                if ($secret && $stunt->{is_secret}) {
+                    continue;
+                }
                 $block .= "<span class='stunt_name'>" . $stunt->{stat_field} . ".</span> " . 
                           $stunt->{stat_description} . "<br/>\n";
             }
@@ -389,7 +411,7 @@ EOT;
             $block .= "</tr></table></td></tr>";
         }
         
-        $block .= "</table></div>";
+        $block .= "</table></div><br/>";
         return $block;
     }
     

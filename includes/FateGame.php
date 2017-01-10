@@ -95,7 +95,8 @@ class FateGame {
                         'aspect_id' => $aspect->{game_aspect_id},
                         'label' => $aspect->{game_aspect_label},
                         'is_shared' => ((bool) $aspect->{is_shared}),
-                        'is_major' => ((bool) $aspect->{is_major})
+                        'is_major' => ((bool) $aspect->{is_major}),
+                        'is_secret' => ((bool) $aspect->{is_secret})
                     );
                     $this->aspects[] = $asp;
                     $this->aspects_by_id[$aspect->{game_aspect_id}] = $asp;
@@ -217,7 +218,8 @@ class FateGame {
                 array( 'r.user_name',
                        'r.user_id',
                        'r.character_dbref',
-                       'r.canon_name' ),
+                       'r.canon_name',
+                       's.game_staff_id' ),
                 array( 'r.register_id = s.register_id',
                        's.game_id' => $game_id )
             );

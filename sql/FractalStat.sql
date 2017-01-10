@@ -1,7 +1,7 @@
 -- Fractal stats table setup for FateCharGen extension
 -- Created originally for aliencity.org
 -- porpentine@gmail.com
--- Last Update: April 20, 2016
+-- Last Update: December 11, 2016
 
 -- Add primary fractal stat table
 CREATE TABLE IF NOT EXISTS /*_*/fate_fractal_stat (
@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS /*_*/fate_fractal_stat (
     shared_fractal_id int default NULL,
     -- Boolean flag: when using the mode system, this is a discipline of a primary skill (ie Engineering, for Science)
     is_discipline tinyint default NULL,
+    -- Boolean flag: should this stat be hidden, even if sheets are visible? For now, interface only for stunts 
+    is_secret tinyint default NULL,
     -- Id of the game level definition for various stats (modes, aspects with labels, skills, etc)
     parent_id int default NULL,
     -- When was this stat last modified?
