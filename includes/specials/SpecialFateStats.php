@@ -83,14 +83,14 @@ class SpecialFateStats extends SpecialPage {
         ),
         FateGameGlobals::STAT_FATE => array(
             'fields' => array(
-                'value' => array( 'label' => 'Current Fate Points', 'size' => 1 ) 
+                'value' => array( 'label' => 'Current Fate Points', 'size' => 1 )
             ),
             'required' => array( 'value' ),
             'unique' => 1
         ),
         FateGameGlobals::STAT_REFRESH => array(
             'fields' => array(
-                'value' => array( 'label' => 'Fate Refresh', 'size' => 1 ) 
+                'value' => array( 'label' => 'Fate Refresh', 'size' => 1 )
             ),
             'required' => array( 'value' ),
             'unique' => 1
@@ -106,14 +106,14 @@ class SpecialFateStats extends SpecialPage {
     public function execute( $sub ) {
         $user = $this->getUser();
         $out = $this->getOutput();
-        $request = $this->getRequest();        
+        $request = $this->getRequest();
         $action = $request->getVal('action');
-        
+
         $this->setHeaders();
         $out->setPageTitle( $this->msg( 'fatestats' ) );
-        
+
         //$out->addHelpLink('http://aliencity.org/wiki/Extension:FateCharGen', true);
-        
+
         if ($user->isAnon()) {
             $out->addHTML("<div class='error' style='font-weight: bold; color: red'>You must be logged in to access this page.</div>");
         } else {
@@ -160,14 +160,14 @@ class SpecialFateStats extends SpecialPage {
             } else {
                 $this->listCharacters();
             }
-        }   
+        }
     }
-    
+
     private function saveMilestoneResults( $fractal_id, $results ) {
         $output = $this->getOutput();
         $fractal = new FateFractal($fractal_id);
         $dbw = wfGetDB(DB_MASTER);
-        
+
         foreach ($results as $form_type => $data) {
             if ($form_type == 'form' || $form_type == 'error') {
                 continue;
@@ -203,15 +203,20 @@ class SpecialFateStats extends SpecialPage {
                     }
                 }
             }
+
+            # TODO: Expand handling for PermanentRecord here and throughout the extension
+            if (ExtensionRegistry::getInstance()->isLoaded('MuxRegister')) {
+                # Use PermanentRecord to make a entry about this milestone
+            }
         }
     }
-    
+
     private function processMilestoneForm( $fractal_id ) {
         $request = $this->getRequest();
         $data = $request->getValues();
         $fractal = new FateFractal($fractal_id);
         $output = $this->getOutput();
-        
+
         $results = array(
             'new' => array(),
             'named' => array(),
@@ -219,7 +224,7 @@ class SpecialFateStats extends SpecialPage {
             'error' => array(),
             'form' => $data
         );
-        
+
         foreach ($data as $key => $value) {
             $value = trim($value);
             if (preg_match("/^(\d+)_([a-z]+)_([a-z]+)_(\d+)$/", $key, $matches)) {
@@ -233,7 +238,7 @@ class SpecialFateStats extends SpecialPage {
                 $results[$matches[2]][$matches[1]][$matches[4]][$matches[3]] = $value;
             }
         }
-        
+
         // If we have pending options and we didn't see them, flag as errors
         foreach ($fractal->pending_stats as $type => $array) {
             foreach ($array as $pending) {
@@ -255,7 +260,7 @@ class SpecialFateStats extends SpecialPage {
                 }
             }
         }
-        
+
         // Now go through the new stunts, make sure we got descriptions and fields both
         if (array_key_exists(FateGameGlobals::STAT_STUNT, $results['new'])) {
             foreach ($results['new'][FateGameGlobals::STAT_STUNT] as $row => $array) {
@@ -272,14 +277,14 @@ class SpecialFateStats extends SpecialPage {
                 }
             }
         }
-        
+
         return $results;
     }
-    
+
     private function viewMilestones( $fractal_id, $results = array() ) {
         $user = $this->getUser();
         $out = $this->getOutput();
-        
+
         $table = '';
         if ($fractal_id) {
             $fractal = new FateFractal($fractal_id);
@@ -297,15 +302,15 @@ class SpecialFateStats extends SpecialPage {
         }
         $out->addHTML($table);
     }
-    
+
     private function getMilestoneForm( $fractal, $results ){
         $user = $this->getUser();
         $output = $this->getOutput();
         $request = $this->getRequest();
-        
+
         $form_url = $this->getPageTitle()->getSubPage('Milestones')->getLinkURL();
         $fractal_id = $fractal->fractal_id;
-        
+
         $form = '<h2>Milestone Advancements for ' . $fractal->name . '</h2>';
         $form .= <<<EOT
             <script type='text/javascript'>
@@ -322,14 +327,14 @@ EOT;
                 $form .= "<div class='successbox'><strong>Milestones submitted.</strong></div>";
             }
         }
-        
+
         // If this isn't our character, make sure we label that
         if ($fractal->user_id != $user->getID()) {
             $form .= "<div class='errorbox'><strong>WARNING: This character does not belong to you. Milestones visible for troubleshooting purposes only.</strong></div>";
         }
-        
+
         $form .= $fractal->getFractalBlock(1);
-        
+
         $submit = 0;
         // Start by checking for post-chargen 'holes'
         if (count($fractal->stats[FateGameGlobals::STAT_ASPECT]) < $fractal->fate_game->aspect_count) {
@@ -350,7 +355,7 @@ EOT;
                 if (!$found) {
                     $remaining--;
                     $pending = new stdClass();
-                    if (array_key_exists(FateGameGlobals::STAT_ASPECT, $fractal->pending_stats)) {    
+                    if (array_key_exists(FateGameGlobals::STAT_ASPECT, $fractal->pending_stats)) {
                         foreach ($fractal->pending_stats[FateGameGlobals::STAT_ASPECT] as $pending_aspect) {
                             if ($pending_aspect->{parent_id} == $aspect['aspect_id']) {
                                 $pending = $pending_aspect;
@@ -361,7 +366,7 @@ EOT;
                     $form .= $this->getMilestoneRow(FateGameGlobals::STAT_ASPECT, $results, $aspect, $pending);
                 }
             }
-            
+
             // Then do the other Aspects
             if ($remaining) {
                 if(array_key_exists(FateGameGlobals::STAT_ASPECT, $fractal->pending_stats)) {
@@ -377,11 +382,11 @@ EOT;
                     $form .= $this->getMilestoneRow(FateGameGlobals::STAT_ASPECT, $results, array(), new StdClass(), $remaining--);
                 }
             }
-                
-            
+
+
             $form .= "</tbody></table></fieldset>";
         }
-        
+
         if (count($fractal->stats[FateGameGlobals::STAT_STUNT]) < $fractal->fate_game->stunt_count) {
             $submit = 1;
             $remaining = $fractal->fate_game->stunt_count - count($fractal->stats[FateGameGlobals::STAT_STUNT]);
@@ -406,10 +411,10 @@ EOT;
             $form .= "<div class='error' style='font-weight: bold; color: red;'>No pending milestones found for this character.</div>";
         }
         $form .= "</form>";
-        
+
         return $form;
     }
-    
+
     private function getMilestoneRow( $stat_type, $results, $game_stat, $pending_stat, $counter = 0 ) {
         $pending = 0;
         if ($pending_stat->{pending_stat_id}) {
@@ -472,7 +477,7 @@ EOT;
         }
         return $row;
     }
-    
+
     private function cleanResults( $results ) {
         $results['form'] = array();
         foreach ($results['new']  as $type => $array) {
@@ -480,13 +485,13 @@ EOT;
         }
         return $results;
     }
-    
+
     private function saveFractalEdits( $fractal_id, $results ) {
         $fractal = new FateFractal($fractal_id);
         $update_modeskills = 0;
         $made_update = 0;
         $dbw = wfGetDB(DB_MASTER);
-        
+
         foreach ($results['delete'] as $stat_id => $junk) {
             if ($fractal->stats_by_id[$stat_id]->{stat_type} == FateGameGlobals::STAT_MODE) {
                 $update_modeskills = 1;
@@ -497,7 +502,7 @@ EOT;
             );
             $made_update = 1;
         }
-        
+
         foreach ($results['edit'] as $stat_id => $changes ) {
             $updates = array(
                 'modified_date' => $dbw->timestamp()
@@ -522,7 +527,7 @@ EOT;
             );
             $made_update = 1;
         }
-        
+
         foreach ($results['new'] as $stat_type => $rows) {
             foreach ($rows as $row => $data) {
                 if ($row == 'max') {
@@ -557,7 +562,7 @@ EOT;
                 $made_update = 1;
             }
         }
-        
+
         if ($made_update) {
             $dbw->update(
                 'fate_fractal',
@@ -565,19 +570,19 @@ EOT;
                 array( 'fractal_id' => $fractal_id )
             );
         }
-        
+
         if ($update_modeskills) {
             $fractal->resetModeSkills();
         }
     }
-    
+
     private function processFractalEditForm() {
         $request = $this->getRequest();
         $output = $this->getOutput();
         $data = $request->getValues();
         $fractal_id = $request->getInt('fractal_id');
         $fractal = new FateFractal($fractal_id);
-        
+
         $results = array(
             'delete' => array(),
             'edit' => array(),
@@ -585,14 +590,14 @@ EOT;
             'error' => array(),
             'form' => $data
         );
-     
+
         // Start by hunting for deletes
         foreach ($data as $key => $value) {
             if (preg_match("/^delete_(\d+)$/", $key, $matches)) {
                 $results['delete'][$matches[1]] = 1;
             }
         }
-        
+
         // Now look for edits
         foreach ($data as $key => $value) {
             if (preg_match("/^(\d+)_(?!new_)(\w+)_(\d+)$/", $key, $matches)) {
@@ -604,20 +609,20 @@ EOT;
                 // If we're already deleting this, then skip
                 if ($results['delete'][$stat_id]) {
                     continue;
-                 
+
                 // See if anything changed; no need to make an update if nothing did
                 } else if ($fractal->stats_by_id[$stat_id]->{'stat_' . $field} == $value) {
                     continue;
-                    
+
                 // If we're looking at a mode's field, compare the parent_id
                 } else if ($stat_type == FateGameGlobals::STAT_MODE && $field == 'field' && $fractal->stats_by_id[$stat_id]->{'parent_id'} == $value) {
                     continue;
-                
+
                 // Compare parent_id for skill labels as well
                 // TODO: Handling for customized skill names
                 } else if ($stat_type == FateGameGlobals::STAT_SKILL && $field == 'label' && $fractal->stats_by_id[$stat_id]->{'parent_id'} == $value) {
                     continue;
-                
+
                 // If we're looking at an empty value, and it was required here, flag it an error
                 } else if (!$value && in_array($field, $this->edit_data[$stat_type]['required'])) {
                     // EXCEPTION:
@@ -627,7 +632,7 @@ EOT;
                         continue;
                     }
                 }
-                
+
                 // If we're here, we found a change; save it to make an update
                 if ($stat_type == FateGameGlobals::STAT_SKILL && $field == 'label') {
                     $results['edit'][$stat_id][$field] = $fractal->fate_game->skills_by_id[$value]['label'];
@@ -637,7 +642,7 @@ EOT;
                 }
             }
         }
-        
+
         // Edits, part two: look for fields that are 'toggled', which may have been set to clear (and so not in data list)
         foreach ($this->edit_data as $stat_type => $stat_info) {
             foreach ($stat_info['fields'] as $field => $field_data) {
@@ -653,7 +658,7 @@ EOT;
                 }
             }
         }
-        
+
         // Now look for new entries
         foreach ($data as $key => $value) {
             if (preg_match("/^(\d+)_new_(\w+)_(\d+)$/", $key, $matches)) {
@@ -672,7 +677,7 @@ EOT;
                 }
             }
         }
-        
+
         // If we're editing a character, check for edited or new aspects to see if we need to set parent_id
         if ($fractal->fractal_type == 'Character') {
             foreach ($data as $key => $value) {
@@ -693,11 +698,11 @@ EOT;
                     // If we're already deleting this, then skip
                     if ($results['delete'][$stat_id]) {
                         continue;
-                    
+
                     // If parent ids match, this didn't change
                     } else if ($fractal->stats_by_id[$stat_id]->{'parent_id'} == $value) {
                         continue;
-                        
+
                     // Otherwise, update things appropriately
                     } else {
                         $results['edit'][$stat_id]['parent_id'] = $value;
@@ -708,7 +713,7 @@ EOT;
                 }
             }
         }
-        
+
         // Once organized, see if this looks like it may just be cruft we can ignore
         // Add 'preset' array to stat_data hash?
         foreach ($results['new'] as $stat_type => $rows) {
@@ -727,14 +732,14 @@ EOT;
                 }
             }
         }
-     
+
         return $results;
     }
-    
+
     private function createFractal() {
         $request = $this->getRequest();
         $result = array( 'error' => 0 );
-    
+
         $new_fractal = array(
             'game_id' => $request->getVal('game_id'),
             'fractal_type' => ($request->getVal('fractal_type') == -1 ? $request->getVal('new_fractal_type') : $request->getVal('fractal_type')),
@@ -777,32 +782,32 @@ EOT;
                 $result['msg'] = $dbw->insertId();
             }
         }
-        
+
         return $result;
     }
-        
-    
+
+
     private function createFractalForm( $result ) {
         $user = $this->getUser();
         $out = $this->getOutput();
         $request = $this->getRequest();
-        
+
         // TODO: handling for is_private
-        
+
         $form_url = $this->getPageTitle()->getSubPage('Create')->getLinkURL();
         $game_id = $request->getVal('game_id');
         $fractal_type = $request->getVal('fractal_type');
         $fractal_name = $request->getVal('fractal_name');
         $new_fractal_type = $request->getVal('new_fractal_type');
         $action = $request->getVal('action');
-        
+
         $game_list = $this->getGameListSelect($game_id);
         $fractal_data = $this->getFractalJSArray();
         $form = <<< EOT
             <script type='text/javascript'>
                 $fractal_data
                 var passed_type = '$fractal_type';
-                
+
                 function updateFractalTypes() {
                     var game = document.getElementById('cfgame');
                     var type = document.getElementById('cftype');
@@ -837,7 +842,7 @@ EOT;
                     }
                     updateNewFractalType();
                 }
-                
+
                 function updateNewFractalType() {
                     var type = document.getElementById('cftype');
                     var row = document.getElementById('new_type_row');
@@ -890,14 +895,14 @@ EOT;
         $out->addHTML($form);
     }
 
-    
+
     private function listCharacters() {
         $user = $this->getUser();
         $out  = $this->getOutput();
         $dbr = wfGetDB(DB_SLAVE);
-        
+
         // TODO: integrate TablePager into this. See SpecialBlockList as framework
-        
+
         $fractal_list = $dbr->select(
             array( 'f' => 'fate_fractal',
                    'g' => 'fate_game',
@@ -922,7 +927,7 @@ EOT;
             array( 'r' => array( 'LEFT JOIN', 'f.register_id = r.register_id' ),
                    'g' => array( 'JOIN', 'f.game_id = g.game_id' ) )
         );
-        
+
         $table = "<table class='wikitable'>".
                  "<tr><th>Character Name</th><th>Game</th><th>Status</th></tr>";
         if ($fractal_list->numRows() == 0) {
@@ -947,7 +952,7 @@ EOT;
                     Linker::link($this->getPageTitle()->getSubpage($subpage), $name, array(), array( 'fractal_id' => $fractal->fractal_id ), array( 'forcearticalpath' ) ) .
                     "</td><td>";
                 if ($user->isAllowed('fatestaff')) {
-                    $table .= Linker::link(Title::newFromText('Special:FateGameConfig')->getSubpage('View'), $fractal->game_name, array(), array( 'game_id' => $fractal->game_id ), array( 'forcearticlepath' ) );
+                    $table .= Linker::link(Title::newFromText('Special:FateGame')->getSubpage('View'), $fractal->game_name, array(), array( 'game_id' => $fractal->game_id ), array( 'forcearticlepath' ) );
                 } else {
                     $table .= $fractal->game_name;
                 }
@@ -957,11 +962,11 @@ EOT;
         }
         $out->addHTML($table);
     }
-    
+
     private function editFractal( $fractal_id, $sheet, $results = array() ) {
         $user = $this->getUser();
         $out = $this->getOutput();
-        
+
         $table = '';
         if ($fractal_id) {
             $fractal = new FateFractal($fractal_id);
@@ -979,20 +984,20 @@ EOT;
         }
         $out->addHTML($table);
     }
-    
+
     private function getFractalEditForm( $fractal, $sheet, $results ) {
         $user = $this->getUser();
         $out = $this->getOutput();
         $request = $this->getRequest();
-        
+
         $form_url = $this->getPageTitle()->getSubPage('Edit')->getLinkURL();
         $fractal_id = $fractal->fractal_id;
-        $read_only = ''; 
+        $read_only = '';
         if ($fractal->user_name) {
             $read_only = 'readonly';
         }
         // TODO: if a character, display basic attributes some other non-form way
-        
+
         $const = FateGameGlobals::getStatConsts();
         $condition_categories = $this->getConditionCategoriesJS();
         $game_modes = '';
@@ -1020,10 +1025,10 @@ EOT;
                 $game_skills
                 $mook_levels
                 $game_aspects
-                
+
                 var edit_data = new Array();
                 edit_data[{$const['aspect']}] = {
-                    fields: { 
+                    fields: {
                         label: { label: 'Label (Optional)', size: 35 },
                         field: { label: 'Aspect', size: 35 }
                     },
@@ -1104,7 +1109,7 @@ EOT;
                     required: [ 'value' ],
                     unique: 1
                 };
-            
+
                 function createLabelCell(field_info, name) {
                     var cell = document.createElement('td');
                     cell.className = 'mw-label';
@@ -1114,7 +1119,7 @@ EOT;
                     cell.appendChild(label);
                     return cell;
                 }
-                
+
                 function createInputSelect(field_info, name, stat_type, new_id, list, mode_skill_label = '', mode_value = 0) {
                     var select = document.createElement('select');
                     var optionArray = new Array();
@@ -1144,7 +1149,7 @@ EOT;
                     }
                     return select;
                 }
-                
+
                 function getModeLevelList(mode_value) {
                     var newList = new Array();
                     for (var i in modeLevels) {
@@ -1152,7 +1157,7 @@ EOT;
                     }
                     return newList;
                 }
-                
+
                 function createAspectSelectCell(field_info, name, stat_type, new_id) {
                     var cell = document.createElement('td');
                     cell.className = 'mw-input';
@@ -1163,7 +1168,7 @@ EOT;
                     cell.appendChild(select);
                     return cell;
                 }
-                
+
                 function createInputCell(field_info, name, stat_type, new_id, mode_skill_label, mode_value) {
                     var cell = document.createElement('td');
                     cell.className = 'mw-input';
@@ -1209,14 +1214,14 @@ EOT;
                     }
                     return cell;
                 }
-                
+
                 // Creates extra spaces, to match with delete functionality
                 function emptyCell() {
                     var cell = document.createElement('td');
                     cell.appendChild(document.createTextNode('\u00A0'));
                     return cell;
                 }
-            
+
                 function addNewRow(stat_type, id, mode_skill_label = '', mode_value = 0) {
                     var check = document.getElementById('ef' + stat_type + '_new_' + edit_data[stat_type].required[0] + '_' + (parseInt(id) + 1));
                     if (!check) {
@@ -1232,7 +1237,7 @@ EOT;
                         var new_id = parseInt(id) + 1;
                         var new_body = document.getElementById('newstat_' + stat_type);
                         var body = document.getElementById('stat_' + stat_type);
-                        
+
                         var row = document.createElement('tr');
                         for (var field in fields) {
                             var input_name = stat_type + '_new_' + field + '_' + new_id;
@@ -1247,7 +1252,7 @@ EOT;
                         new_body.appendChild(row);
                     }
                 }
-                
+
                 function toggleAspectLabel(id) {
                     var select = document.getElementById('select_' + id);
                     var label = document.getElementById(id);
@@ -1276,7 +1281,7 @@ EOT;
                 $form .= "<div class='successbox'><strong>Stat updates saved.</strong></div>";
             }
         }
-        
+
         $form .= <<<EOT
                 <fieldset>
                     <legend>Basic Attributes</legend>
@@ -1305,9 +1310,9 @@ EOT;
             } elseif ($stat_id == FateGameGlobals::STAT_MODE && $fractal->fate_game->skill_distribution != FateGameGlobals::SKILL_DISTRIBUTION_MODES) {
                 continue;
             }
-            
+
             $form .= "<fieldset><legend>" . $stat_labels[$stat_id]. "</legend>";
-            
+
             if ($stat_id == FateGameGlobals::STAT_SKILL && $fractal->fate_game->skill_distribution == FateGameGlobals::SKILL_DISTRIBUTION_MODES) {
                 $form .= $this->getModeSkillSection($stat_id, $fractal, $results);
             } else {
@@ -1333,7 +1338,7 @@ EOT;
             }
             $form .= "</fieldset>";
         }
-            
+
         $form .= <<<EOT
                 <span class='mw-htmlform-submit-buttons'>
                     <input class='mw-htmlform-submit' type='submit' value='Update'/>
@@ -1343,7 +1348,7 @@ EOT;
 
         return $form;
     }
-    
+
     private function getModeSkillSection( $stat_id, $fractal, $results ) {
         if (array_key_exists(FateGameGlobals::STAT_MODE, $fractal->stats)) {
             $modeskill_data = array(
@@ -1354,7 +1359,7 @@ EOT;
                 'modeskill' => 1,
                 'unique' => 0
             );
-            
+
             $ladder = FateGameGlobals::getLadder();
             $levels = array_reverse(FateGameGlobals::getModeLevels(), true);
             $form .= "<table>";
@@ -1406,7 +1411,7 @@ EOT;
         }
         return $form;
     }
-    
+
     private function getConditionCategoriesJS() {
         $array = FateGameGlobals::getConditionCategories();
         $js = 'var conditions = new Array();';
@@ -1415,7 +1420,7 @@ EOT;
         }
         return $js;
     }
-    
+
     private function getGameModesJS( $fractal ) {
         $js = "var modeList = new Array();";
         foreach ($fractal->fate_game->modes as $mode) {
@@ -1423,8 +1428,8 @@ EOT;
         }
         return $js;
     }
-    
-    // TODO: Consolidate this function with function in SpecialFateGameConfig? - move to FateGame?
+
+    // TODO: Consolidate this function with function in SpecialFateGame? - move to FateGame?
     private function getGameSkillsJS( $fractal ) {
         $js = "var skillList = new Array();";
         foreach ($fractal->fate_game->skills as $skill) {
@@ -1432,7 +1437,7 @@ EOT;
         }
         return $js;
     }
-    
+
     private function getModeLevelsJS() {
         $array = array_reverse(FateGameGlobals::getModeLevels(), true);
         $js = "var modeLevels = new Array();";
@@ -1441,7 +1446,7 @@ EOT;
         }
         return $js;
     }
-    
+
     private function getMookLevelsJS() {
         $array = FateGameGlobals::getMookLevels();
         $js = "var mookLevels = new Array();";
@@ -1450,7 +1455,7 @@ EOT;
         }
         return $js;
     }
-    
+
     private function getGameAspectsJS( $fractal ) {
         $js = "var gameAspects = new Array();";
         foreach ($fractal->fate_game->aspects as $aspect) {
@@ -1459,7 +1464,7 @@ EOT;
         $js .= "gameAspects[0] = 'Use a Custom Label';";
         return $js;
     }
-    
+
     private function getEditStatRow( $stat_id, $stat_data, $stat, $fractal, $results, $new_count = 0 ) {
         $new = '';
         $oninput = '';
@@ -1544,7 +1549,7 @@ EOT;
                 if ($new) {
                     $hidden_name = $stat_id . '_' . $new . 'mode_' . (is_array($stat) ? $new_count : $stat->{fractal_stat_id});
                     $row .= "<input type='hidden' name='$hidden_name' value='" . $stat_data['mode_id'] . "'/>";
-                }                    
+                }
                 $row .= "</td>";
             } elseif ($field_data['type'] == 'display') {
                 $row .= "<td class='mw-input'>$value</td>";
@@ -1579,14 +1584,14 @@ EOT;
             $row .= $this->getDeleteCells($stat, $results);
         }
         $row .= '</tr>';
-        
+
         if (!is_array($stat) && $results['error']['required'][$stat->{fractal_stat_id}]) {
             $row .= $this->getFormErrorCells($stat_data, $results['error']['required'][$stat->{fractal_stat_id}]);
         }
-        
+
         return $row;
     }
-    
+
     private function getFormErrorCells($stat_data, $errors) {
         $row .= '<tr>';
         foreach ($stat_data['fields'] as $field => $field_data) {
@@ -1597,10 +1602,10 @@ EOT;
             }
         }
         $row .= "<td>&nbsp;</td><td>&nbsp;</td></tr>";
-        
+
         return $row;
     }
-    
+
     private function getDeleteCells( $stat, $results ) {
         $cells = '';
         if (is_array($stat)) {
@@ -1616,7 +1621,7 @@ EOT;
         }
         return $cells;
     }
-    
+
     private function viewFractalBlock( $fractal_id ) {
         $user = $this->getUser();
         $out = $this->getOutput();
@@ -1638,11 +1643,11 @@ EOT;
             $out->addHTML("<div class='error' style='font-weight: bold; color: red'>Missing fractal_id argument; don't know which fractal to show.</div>");
         }
     }
-    
+
     private function viewFractalSheet( $fractal_id ) {
         $user = $this->getUser();
         $out = $this->getOutput();
-        
+
         if ($fractal_id) {
             $fractal = new FateFractal($fractal_id);
             $table = '';
@@ -1660,11 +1665,11 @@ EOT;
             $out->addHTML("<div class='error' style='font-weight: bold; color: red'>Missing fractal_id argument; don't know which fractal to show.</div>");
         }
     }
-    
+
     private function getGameListSelect($game_id) {
         $user = $this->getUser();
         $dbr = wfGetDB(DB_SLAVE);
-        
+
         $games = $dbr->select(
             array( 'g' => 'fate_game',
                    'r' => 'muxregister_register' ),
@@ -1673,7 +1678,7 @@ EOT;
                    'g.game_name' ),
             array( 'r.register_id = g.register_id' )
         );
-        
+
         $select = "<select name='game_id' id='cfgame' onchange='updateFractalTypes()'>";
         if ($games->numRows() > 0) {
             $selected = ($game_id == 'empty' || !$game_id ? 'selected' : '');
@@ -1686,14 +1691,14 @@ EOT;
             $select .= "<option value=''>No valid games found; please create one before creating associated fractals.</option>";
         }
         $select .= "</select>";
-        
+
         return $select;
     }
-    
+
     private function getFractalJSArray() {
         $user = $this->getUser();
         $dbr = wfGetDB(DB_SLAVE);
-        
+
         $fractals = $dbr->select(
             array( 'f' => 'fate_fractal'),
             array( 'f.fractal_type',
@@ -1703,7 +1708,7 @@ EOT;
             array( 'DISTINCT',
                    'ORDER BY' => array( 'game_id', 'fractal_type' ) )
         );
-        
+
         $js = "var fractalList = new Array();";
         if ($fractals->numRows() > 0) {
             $this_id = -1;
@@ -1730,10 +1735,10 @@ EOT;
             }
             $js .= "fractalList[$this_id] = [" . implode(',', $this_list) . "];";
         }
-            
+
         return $js;
     }
-    
+
     protected function getGroupName() {
         return 'other';
     }

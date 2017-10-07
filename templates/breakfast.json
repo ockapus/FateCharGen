@@ -1,0 +1,66 @@
+{
+    "name": "Breakfast Cult",
+    "aspects": {
+        "count": 6,
+        "labeled": [
+            {
+                "label": "Concept",
+                "major": 1
+            },
+            {
+                "label": "Talent"
+            },
+            {
+                "label": "Student"
+            },
+            {
+                "label": "Drive"
+            },
+            {
+                "label": "Agenda",
+                "secret": 1
+            }
+        ]
+    },
+    "skills": {
+        "distribution": "Approaches",
+        "max": 5,
+        "points": [ 3, 2, 2, 1, 1, 0 ],
+        "list": [
+            { "label": "Careful" },
+            { "label": "Clever" },
+            { "label": "Flashy" },
+            { "label": "Forceful" },
+            { "label": "Quick" },
+            { "label": "Sneaky" }
+        ],
+        "turn order": {
+            "mental": [ "Careful" ],
+            "physical": [ "Quick" ]
+        }
+    },
+    "stunts": {
+        "free": 3
+    },
+    "refresh": 3,
+    "stress": {
+        "count": 3,
+        "tracks": [
+            { "label": "Hope" }
+        ]
+    },
+    "consequences": [
+        {
+            "label": "Mild",
+            "value": 2
+        },
+        {
+            "label": "Moderate",
+            "value": 4
+        },
+        {
+            "label": "Severe",
+            "value": 6
+        }
+    ]
+}

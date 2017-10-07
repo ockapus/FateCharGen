@@ -13,7 +13,7 @@ Add to Cron List:
 
 &db_name fcco=alienc_aliencity
 &tbl_pre fcco=wiki_
-&errors_to fcco=#6
+&errors_to fcco=#14
 &colsize fcco=25
 &va fcco= <db # of the jobs database>
 @fo me=&last_fractal_update fcco=[mw_timestamp()]
@@ -44,9 +44,9 @@ Add to Cron List:
     {
         @mail/quick [u(errors_to)]/Fractal Update Error=MySQL error occurred with fractal update process:%r%r[rserror()]
     }
-    
+
 &tr_update_single_fractal fcco=
-    @eval 
+    @eval
         [setq(0,[extract([rsrec(|)],1,1,|)])]
         [setq(1,[extract([rsrec(|)],2,1,|)])]
         [switch([extract([rsrec(|)],8,1,|)],
@@ -83,7 +83,7 @@ Add to Cron List:
     @if [rsnext()]={@trigger/quiet me/tr_update_single_fractal}
 
 &tr_cron_game fcco=@query/sql me/tr_updated_games=[u(db_name)]/[u(sql_updated_games)]
-    
+
 &tr_updated_games fcco=
     @if [rserror()]=
     {
@@ -112,7 +112,7 @@ Add to Cron List:
     @query/sql %#/tr_game_turn_order=[u(db_name)]/[u(sql_game_turn_order,%q0,%q1)];
     @query/sql %#/tr_game_staff=[u(db_name)]/[u(sql_game_staff,%q0,%q1)];
     @if [rsnext()]={@trigger/quiet me/tr_update_single_game}
-   
+
 
 &tr_game_turn_order fcco=
     @if [rserror()]=
@@ -126,8 +126,8 @@ Add to Cron List:
         @mail/quick [u(errors_to)]/Turn Order Update Error=MySQL error occured with turn order query:%r%r[rserror()]
     }
 
-&tr_set_game_turn_order #425=
-    @eval 
+&tr_set_game_turn_order fcco=
+    @eval
         [setq(0,[extract([rsrec(|)],1,1,|)])]
         [setq(1,[if([eq([extract([rsrec(|)],2,1,|)],1)],physical,mental)])]
         [setq(2,[extract([rsrec(|)],3,1,|)])]
@@ -152,7 +152,7 @@ Add to Cron List:
     {
         @mail/quick [u(errors_to)]/Staff Update Error=MySQL error occured with game staff query:%r%r[rserror()]
     }
-    
+
 &tr_fractal_stats fcco=
     @if [rserror()]=
     {
@@ -267,13 +267,13 @@ Add to Cron List:
         [u(display_stress,[r(1)])]%r
         [footer()]
     )]
-   
+
 &display_summary fcco=
     [rjust(Game:%b,[u(colsize)])][if([isdbref([setr(g,[locate(%vb,Game [u(%0/game_id)],iT)])])],[u(%qg/game_name)],UNKNOWN)]%r
     [rjust(Status:%b,[u(colsize)])][u(display_status,%0)]%r
     [rjust(Fate Refresh:%b,[u(colsize)])][u(%0/[lattr(%0/refresh_*)])]
     [rjust(Current Fate Points:%b,40)][u(%0/[lattr(%0/fate_*)])]
-    
+
 &display_status fcco=
     [switch(
         [hasattr(%0,frozen_date)]
@@ -287,7 +287,7 @@ Add to Cron List:
         Submitted on [u(%0/submit_date)],
         Created on [u(%0/create_date)]
     )]
-   
+
 &display_stress fcco=
     [subheader(Stress Tracks)]%r
     [iter([sortby(sort_stresses,[iter([lattr(%0/stress_*)],[u(%0/##)], ,|)],|,|)],
@@ -295,17 +295,17 @@ Add to Cron List:
         [repeat(%xc%[ %]%xn%b,[sub([extract(##,2,1,:)],[extract(##,3,1,:)])])],
         |,%r
     )]
-    
+
 &sort_stresses fcco=
     [comp(%0,%1)]
-   
+
 &display_consequence fcco=
     [subheader(Consequences)]%r
     [iter([sortby(sort_consequences,[iter([lattr(%0/consequence_*)],[u(%0/##)], ,|)],|,|)],
         [rjust(%(-[extract(##,1,1,:)]%) [extract(##,2,1,:)]:%b,[u(colsize)])][extract(##,3,1,:)],
         |,%r
     )]
-    
+
 &sort_consequences fcco=
     [if([eq([extract(%0,1,1,:)],[extract(%1,1,1,:)])],
         [if([regmatch([extract(%0,2,1,:)],^[extract(%1,2,1,:)]$)],
@@ -314,24 +314,24 @@ Add to Cron List:
         )],
         [comp([extract(%0,1,1,:)],[extract(%1,1,1,:)])]
     )]
-   
+
 &display_stunt fcco=
     [subheader(Stunts)]%r
     [iter([sortby(sort_stunts,[iter([lattr(%0/stunt_*)],[u(%0/##)], ,|)],|,|)],
         %b%xh[eval([extract([escape(##)],1,1,:)])]%xn%r[space(6)][rightcol([eval([extract([escape(##)],3,1,:)])],6)],
         |,%r
     )]
-    
+
 &sort_stunts fcco=
     [comp(%0,%1)]
-   
+
 &display_aspect fcco=
     [subheader(Aspects)]%r
     [iter([sortby(sort_aspects,[iter([lattr(%0/aspect_*)],[u(%0/##)], ,|)],|,|)],
         [if([strlen([eval([extract([escape(##)],1,1,:)])])],[rjust([eval([extract([escape(##)],1,1,:)])]:%b,[u(colsize)])],[space([u(colsize)])])][eval([extract([escape(##)],2,1,:)])],
         |,%r
     )]
-    
+
 &sort_aspects fcco=
     [switch(
         [if([isnum([extract(%0,4,1,:)])],[extract(%0,4,1,:)],0)][if([isnum([extract(%1,4,1,:)])],[extract(%1,4,1,:)],0)],
@@ -365,7 +365,7 @@ Add to Cron List:
         4,[u(display_approach,%0)],
         [u(display_column,%0)]
     )]
- 
+
 &display_column fcco=
     [setq(r,0)]
     [setq(f,1)]
@@ -383,20 +383,20 @@ Add to Cron List:
         |,@@
     )]
     [if(%qs,[rightcol([escape(%qs)],[u(colsize)],|,%,%b)])]
-    
+
 &display_approach fcco=
     [iter([sortby(sort_approaches,[iter([lattr(%0/skill_*)],[u(%0/##)], ,|)],|,|)],
         [rjust([extract(##,2,1,:)]:%b,[u(colsize)])][fateladder([extract(##,3,1,:)],1)],
         |,%r
     )]
-    
+
 &display_mode fcco=
     [iter([sortby(sort_modes,[iter([lattr(%0/mode_*)],[u(%0/##)]:[extract(##,2,1,_)], ,|)],|,|)],
         [rjust([fateladder([extract(##,2,1,:)],1)] [extract(##,1,1,:)]:%b,[u(colsize)])]
         [rightcol([escape([u(display_mode_skills,%0,[extract(##,3,1,:)])])],[u(colsize)],|,%,%b)],
         |,%r
     )]
-    
+
 &display_mode_skills fcco=
     [iter([sortby(sort_mode_skills,[iter([u(get_mode_skills,%0,%1)],[u(%0/##)], ,|)],|,|)],
         [extract(##,2,1,:)] +[extract(##,3,1,:)],
@@ -405,10 +405,10 @@ Add to Cron List:
 
 &get_mode_skills fcco=
     [trim([iter([lattr(%0/skill_*)],[if([strmatch(%1,[extract([u(%0/##)],1,1,:)])],##)])])]
-    
+
 &sort_approaches fcco=
     [comp([extract(%0,2,1,:)],[extract(%1,2,1,:)])]
-    
+
 &sort_modes fcco=
     [setq(2,[extract(%0,2,1,:)])][setq(3,[extract(%1,2,1,:)])]
     [if(
@@ -417,7 +417,7 @@ Add to Cron List:
             [gt([r(3)],[r(2)])],1,0
         )]
     )]
-    
+
 &sort_columns fcco=
     [setq(2,[extract(%0,3,1,:)])][setq(3,[extract(%1,3,1,:)])]
     [if(
@@ -436,7 +436,7 @@ Add to Cron List:
             [gt([r(5)],[r(4)])],1,0
         )]
     )]
-    
+
 &cmd_games fcco=$+games:
     @pemit %#=
         [header(Registered Fate Games)]%r
@@ -447,7 +447,7 @@ Add to Cron List:
             %b,%r
         )]
         %r[footer(+game # to view specific details)]
-        
+
 &cmd_game fcco=$+game *:
     @pemit %#=[switch(
         [and([isint(%0)],[gt(%0,0)],[lte(%0,[words([lcon(%vb)])])])],
@@ -458,7 +458,7 @@ Add to Cron List:
         [rjust(Staff:%b,[u(colsize)])][sort([iter([u(%q0/game_staff)],[name(##)],%b,|)],a,|,%,%b)]%r
         [rjust(Description:%b,[u(colsize)])][rightcol([u(%q0/game_description)],[u(colsize)])]%r
         [rjust(Status:%b,[u(colsize)])][u(%q0/game_status)]%r
-        [if([lattr(%q0/aspect_*)], 
+        [if([lattr(%q0/aspect_*)],
             [subheader(Game Aspects)]%r
             [iter([sortby(sort_aspects,[iter([lattr(%q0/aspect_*)],[u(%q0/##)], ,|)],|,|)],
                 [if([strlen([extract(##,1,1,:)])],[rjust([extract(##,1,1,:)]:%b,[u(colsize)])],[space([u(colsize)])])][extract(##,2,1,:)],
@@ -470,9 +470,9 @@ Add to Cron List:
         ,
         [fatepref()] Invalid game #. Must be between 1 and [words([lcon(%vb)])].
     )]
-    
+
 @@ Help for +games
-    
+
 +info/add +help/games=Help on +games/%b%b+games%r%b%b+game <#>%r%rThe first command lists all currently configured FATE games, their status, and the character who is considered that game's owner. The second command shows more details about that specific game, including the description, any assistant staff that have authority to help run things, and a list of the current game-level aspects.
 
 &cmd_location/register fcco=$+location/register *:
@@ -490,7 +490,7 @@ Add to Cron List:
                 [pemit(%#,[fatepref()] [name([loc(%#)])] registered to game [u(%q0/game_name)].)]
             }
         )]
-        
+
 &cmd_location fcco=$+location:
     @pemit %#=[switch(
         [hasattr([loc(%#)],_fate_stats)]
@@ -511,7 +511,7 @@ Add to Cron List:
             [footer()]
         }
     )]
-    
+
 &cmd_location/clear fcco=$+location/clear:
     @pemit %#=
         [switch([hasattr([loc(%#)],_fate_stats)],
@@ -536,11 +536,11 @@ Add to Cron List:
                 [pemit(%#,[fatepref()] [name([loc(%#)])] has been unregistered as a game +location.)]
             }
         )]
-        
+
 @@ Help file for +location command
 
 +info/add +help/location=Help on +location/%b%b+location%r%b%b+location/register <# or game name>%r%b%b+location/clear%r%rThe first command, +location, supplies information about a room on the mush if it has been registered. If it has, then it will show which game the room has been registered as belonging to, and any assigned aspects relevant to that location.%r%rThe second command, +location/register, binds a room as belonging to the specified game. One must have staff permission for the specific game for this to work. Once registered, a fractal attached to the room will be created, and staff can edit the aspects for that location through the usual interface on the wiki.%r%rThe final command, +location/clear, is used to unregister a room. Only staff for the game that owns that room, or a site wizard, can use this command. Please note that all stats associated with the room and its associated fractal will be deleted, and cannot be recovered, so use this with caution.
- 
+
 
 &cmd_situation/set fcco=$+situation/set *=*:
     @eval
@@ -560,7 +560,7 @@ Add to Cron List:
                 [pemit(%#,[fatepref()] Can't find %0.)]
             )]
         )]
-        
+
 &cmd_situation/clear fcco=$+situation/clear *=*:
     @eval
         [switch(%0,
@@ -594,7 +594,7 @@ Add to Cron List:
                 [pemit(%#,[fatepref()] Can't find %0.)]
             )]
         )]
-        
+
 &cmd_situation/reset fcco=$+situation/reset:
     @eval
         [iter([lcon([loc(%#)],PLAYER)],
@@ -604,9 +604,9 @@ Add to Cron List:
         [iter([lattr([loc(%#)]/_situation*)],[set([loc(%#)],##:)],%b,@@)]
         [iter([lattr([loc(%#)]/_npc_situation*)],[set([loc(%#)],##:)],%b,@@)]
         [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] has cleared all nearby Situational Aspects.)]
-        
+
 &filter_npc_match fcco=[strmatch([extract(%0,2,1,:)],%1*)]
-        
+
 &cmd_situation fcco=$+situation:
     @pemit %#=
         [setq(0,0)]
@@ -643,13 +643,13 @@ Add to Cron List:
         )]
         [if([not(%q0)],%b%bNo Situational Aspects found currently in this location.%r)]
         [footer()]
- 
+
 &sort_npc_situation fcco=
     [if([strmatch([extract(%0,2,1,:)],[extract(%1,2,1,:)])],
         [comp([extract(%0,1,1,:)],[extract(%1,1,1,:)])],
         [comp([extract(%0,2,1,:)],[extract(%1,2,1,:)])]
     )]
-    
+
 @@ Help file for +situation command
 
 +info/add +help/situation=Help on +situation/%b%b+situation%r%b%b+situation/set <target>=<aspect>%r%b%b+situation/clear <target>=<#>%r%b%b+situation/reset%r%rThis series of commands allows players to keep track of situational, or temporary, aspects during the course of play.%r%rWith no arguments, +situation displays all situational aspects set on the location, any connected players, and any NPCs that may have aspects set on them currently as well.%r%r+situation/set allowed someone to set a new Aspect. Valid targets are: me, here, the name of a local player, or npc:<name>. This npc name is entirely arbitrary, but must match exactly for aspects set on the same NPC to group up correctly when viewed with +situation.%r%r+situation/clear will remove a currently set aspect. It uses the same list of possible targets as +situation/set, while also expecting a number that corresponds to the numbers displayed by +situation.%r%rThe final command, +situation/reset, will clear all currently set Situational Aspects when a scene is finished or a new scene is beginning.
@@ -685,16 +685,18 @@ Add to Cron List:
             }
         )]
 
-+info/add +help/alts=Help on +alts/%b%b+alts <player>%r%rDisplays a list of all characters registered to the same wiki name (and thus presumably played by the same player) as the named player. If any of those characters are registered to FATE games, it will display the game they belong to and their current approval status as well.        
- 
+@@ Help file for +alts command
+
++info/add +help/alts=Help on +alts/%b%b+alts <player>%r%rDisplays a list of all characters registered to the same wiki name (and thus presumably played by the same player) as the named player. If any of those characters are registered to FATE games, it will display the game they belong to and their current approval status as well.
+
 &sql_delete_stats fcco=delete from [u(TBL_PRE)]fate_fractal_stat where fractal_id=%0;
 
-&sql_delete_fractal fcco=delete from [u(TBL_PRE)]fate_fractal where fractal_id=%0;        
-        
+&sql_delete_fractal fcco=delete from [u(TBL_PRE)]fate_fractal where fractal_id=%0;
+
 &sql_register_location fcco=insert into [u(TBL_PRE)]fate_fractal (fractal_name, game_id, dbref, fractal_type, is_private, create_date, update_date) values ('[sqlescape([name(%0)])]', %1, '%0', 'Location', 0, '[mw_timestamp()]', '[mw_timestamp()]');
-        
-&sql_fractal_update fcco=update [u(TBL_PRE)]fate_fractal set update_date=[mw_timestamp()] where fractal_id=%0;    
-    
+
+&sql_fractal_update fcco=update [u(TBL_PRE)]fate_fractal set update_date=[mw_timestamp()] where fractal_id=%0;
+
 &sql_fate_spend fcco=update [u(TBL_PRE)]fate_fractal_stat set stat_value=stat_value - 1, modified_date=[mw_timestamp()] where fractal_stat_id = %0;
 
 &sql_stress_update fcco=update [u(TBL_PRE)]fate_fractal_stat set stat_value=%0, modified_date=[mw_timestamp()] where fractal_stat_id=%1;
@@ -739,7 +741,7 @@ Add to Cron List:
                 [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] adds %0 to the initiative turn order.)]
             }
         )]
-        
+
 &cmd_init/del fcco=$+init/del *:
     @eval
         [switch(
@@ -755,7 +757,7 @@ Add to Cron List:
                 [set([loc(%#)],%q0:)]
             }
         )]
-          
+
 &cmd_init/join fcco=$+init/join:
     @eval
         [switch(
@@ -785,7 +787,7 @@ Add to Cron List:
                 [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] joined the initiative turn order.)]
             }
         )]
-            
+
 &cmd_init/roll fcco=$+init/roll *:
     @eval
         [switch(
@@ -852,15 +854,15 @@ Add to Cron List:
             %b,@@
         )]
         [pemit([lcon([loc(%#)])],[fatepref()] [name(%#)] has cleared the initiative turn order.)]
- 
+
 &sort_init fcco=[comp([extract(%1,2,1,:)],[extract(%0,2,1,:)])]
-            
-&sort_init_npc fcco=[comp([extract(%0,3,1,:)],[extract(%1,3,1,:)])]   
- 
+
+&sort_init_npc fcco=[comp([extract(%0,3,1,:)],[extract(%1,3,1,:)])]
+
 @@ Help file for +init
 
 +info/add +help/init=Help on +init/This set of commands helps to manage and keep track of turn order for combat scenes and other conflicts. The simplest form, +init, will show the complete turn order list once initiative has been declared. The options are:%r%r%b%bGetting started: +init/declare <type> %[=<game>%]%r%rThis command declares the beginning of initiative for a location, and must be used before any of the other commands. <type> must be either physical or mental, to determine the type of conflict about to begin. If a location has been registered as belonging to a specific game, then that game's initiative rules will be used. Otherwise, you will also need to specify which game applies, either by number (matching the +games list) or name.%r%r%b%bJoining Turn Order:%r%b%b+init/join%r%b%b+init/roll <mode>%r%b%b+init/add <npc>=<position>%r%b%b+init/del <npc>%r%rOnce initiative has been declared, then characters and NPCs can be added to the turn order. If playing a game using the Mode skill system, then turn order is determined by rolling one of your applicable modes with +init/roll. Please check with whoever is running the combat to make sure the mode you want to roll is applicable. In all other games, no rolling is required and +init/join should be used instead.%r%rNPCs can be added by anyone to the turn order by supplying a name and a specific position on the list. Once removed from the combat, NPCs can also be removed with the +init/del command to keep the turn order easier to follow.%r%r%b%bCleaning up: +init/clear%r%rOnce a conflict is finished, +init/clear will clean everything up and leave a location ready a new initiative to be declared at a later date.
-  
+
 &cmd_stress/check fcco=$+stress/check *=*:
     @eval
         [if(
@@ -884,10 +886,10 @@ Add to Cron List:
                         [trigger(%va/TRIG_BROADCAST,[u(%va/FN_FIND-JOB,%q1)],%!,ADD)]
                     )]
                 }
-            )], 
+            )],
             [pemit(%#,[fatepref()] Syntax error. Please check +help stress.)]
         )]
-        
+
 &cmd_stress/clear fcco=$+stress/clear *=*:
     @eval
         [if(
@@ -913,15 +915,15 @@ Add to Cron List:
                         [trigger(%va/TRIG_BROADCAST,[u(%va/FN_FIND-JOB,%q1)],%!,ADD)]
                     )]
                 }
-            )], 
+            )],
             [pemit(%#,[fatepref()] Syntax error. Please check +help stress.)]
         )]
 
 @@ Help file for +stress command
-        
+
 +info/add +help/stress=Help on +stress/%b%b+stress/check <track>=<#> %[to job <#>%]%r%b%b+stress/clear <track>=<#> %[to job <#>%]%r%rMarks or clears a number of check boxes on the specified Stress Track on your character sheet. This action will be shared with everyone in the room with you. Optionally, you can also add a comment to a specified job noting the action for record-keeping purposes.
-    
-   
+
+
 &cmd_consequence/set fcco=$+consequence/set */*/*:
     @eval
         [if(
@@ -953,7 +955,7 @@ Add to Cron List:
             [pemit(%#,[fatepref()] Syntax error. Please check +help consequence.)]
         )]
 
-&cmd_consequence/clear fcco=$+consequence/clear */*:    
+&cmd_consequence/clear fcco=$+consequence/clear */*:
     @eval
         [if(
             [regmatchi(%1,^(%[a-z0-9 %,%]+)(=job (%[0-9%]+))?$,-1 0 -1 1)],
@@ -984,7 +986,10 @@ Add to Cron List:
             [pemit(%#,[fatepref()] Syntax error. Please check +help consequence.)]
         )]
 
+@@ Help file for +consequence command
+
 +info/add +help/consequence=Help on +consequence/%b%b+consequence/set <# or label>/<Aspect>/<Reason> %[=job <#>%]%r%b%b+consequence/clear <# or label>/<Reason> %[=job <#>%]%r%rThese commands clear or set a consequence on your sheet during play. Both require a reason, which will be reported to the room. Which consequence to modify is specified either by it's numerical value, or the label (Mild/Moderate/Severe); this latter option is most useful when your skills are high enough to have given you a secondary Mild consequence specifically tied to one of your stress tracks.%r%rIt's also possible to record the update to a consequence to a specific job, by using the optional "=job <#>" syntax.%r%rPlease note that it isn't possible to set a consequence that already has an Aspect with these commands; if you want to modify a Severe Consequence to show that it is getting better over time, please do that via the Milestone interface.
+
 
 &cmd_gamewho/all fcco=$+gamewho/all *:
     @pemit %#=
@@ -1001,7 +1006,7 @@ Add to Cron List:
             },
             [fatepref()] Can't find game %0.
         )]
-        
+
 &cmd_gamewho fcco=$+gamewho *:
     @pemit %#=
         [if([isdbref([setr(0,[u(fn_find_game,%0)])])],
@@ -1032,9 +1037,12 @@ Add to Cron List:
         [rjust([fmtidle(%0)],6)]%b
         [rjust([if([hasflag(%0,CONNECT)],[fmtconn(%0)],--)],6)]%b
         [ljust([switch([orflags([loc(%0)],UD)][isstaff(%1)],11,[name([loc(%0)])],10,Unfindable,[name([loc(%0)])])],31)]
-        
+
+@@ Help file for +gamewho command
+
 +info/add +help/gamewho=Help on +gamewho/%b%b+gamewho[/all] <game>%r%rLists all characters currently registered to the specified game. By default, characters who are frozen are filtered from the list, but can be seen with the optional /all flag.%r%rThe leftmost column shows Status flag information about the given character. Possible flags are:%r%r%b%b* ? - New or Unapproved%r%b%b* F - Frozen
-        
+
+
 &cmd_fate/spend fcco=$+fate/spend*:
     @eval
         [if(
@@ -1061,9 +1069,9 @@ Add to Cron List:
             )],
             [pemit(%#,[fatepref()] Syntax error. Please check +help fate.)]
         )]
-        
+
 &sql_fate_gain fcco=update [u(TBL_PRE)]fate_fractal_stat set stat_value=stat_value + 1, modified_date=[mw_timestamp()] where fractal_stat_id = %0;
-    
+
 &cmd_fate/gain fcco=$+fate/gain*:
     @eval
         [if(
@@ -1089,12 +1097,12 @@ Add to Cron List:
             )],
             [pemit(%#,[fatepref()] Syntax error. Please check +help fate.)]
         )]
-        
+
 &cmd_fate/give fcco=$+fate/give *:
     @eval
         [switch(
             [isdbref([num(*%0)])]
-            [hasattr([num(*%0)],_fate_stats)]    
+            [hasattr([num(*%0)],_fate_stats)]
             [u(fn_can_staff,[u([setr(0,[u([num(*%0)]/_fate_stats)])]/game_id)],%#)]
             [attrcnt(%q0/fate_*)],
             0*,[pemit(%#,[fatepref()] %0 could not be found.)],
@@ -1106,12 +1114,12 @@ Add to Cron List:
                 [set(%q0,%q1:[add([u(%q0/%q1)],1)])]
                 [sql([u(sql_fate_gain,[extract(%q1,2,1,_)])])]
                 [sql([u(sql_fractal_update,[u(%q0/fractal_id)]
-                [pemit([lcon([loc([num(*%0)])])] [if([not([member([lcon([loc([num(*%0)])])],%#)])],%#)],[fatepref()] [name(%#)] gave [name([num(*%0)])] a Fate Point.)]  
+                [pemit([lcon([loc([num(*%0)])])] [if([not([member([lcon([loc([num(*%0)])])],%#)])],%#)],[fatepref()] [name(%#)] gave [name([num(*%0)])] a Fate Point.)]
             }
         )]
-        
-&sql_fate_refresh fcco=update [u(TBL_PRE)]fate_fractal_stat set stat_value=%0, modified_date=[mw_timestamp()] where fractal_stat_id=%1;        
-        
+
+&sql_fate_refresh fcco=update [u(TBL_PRE)]fate_fractal_stat set stat_value=%0, modified_date=[mw_timestamp()] where fractal_stat_id=%1;
+
 &cmd_fate/refresh fcco=$+fate/refresh *:
     @eval
         [switch(
@@ -1138,17 +1146,18 @@ Add to Cron List:
                 [pemit(%#,[fatepref()] All Fate Points refreshed for [u(%q0/game_name)])]
             }
         )]
- 
+
 @@ Help and Staff help for +fate
 
 +info/add +help/fate=Help on +Fate/%b%b+fate/spend %[to job <#>%]%r%b%b+fate/gain %[to job <#>%]%r%b%b+fate/give <character>%r%b%b+fate/refresh <game>%r%rThe first two options spend or gain a fate point, while notifying the room that you've done so. Optionally, you can also record the spend or gain to a specified job as a new comment.%r%rThe /give option allows someone designated as staff for a specific game to give a Fate Point to the specified character.%r%rThe final option, /refresh, allows staff to refresh the Fate Point pools for all players of a specified game. Which game can be specified either by name, or by number (corresponding to the number shown with the +games command.)
-         
+
+
 &fn_can_staff fcco=
     [localize([switch(
         [and(
             [if([isdbref(%0)],
                 [setq(0,%0)]
-                [and([eq(%vb,[loc(%0)])],[strmatch([name(%0)],Game *)])], 
+                [and([eq(%vb,[loc(%0)])],[strmatch([name(%0)],Game *)])],
                 [isdbref([setr(0,[locate(%vb,Game %0,iT)])])]
             )],
             [or(
@@ -1159,14 +1168,14 @@ Add to Cron List:
         1,1,
         0
     )])]
-    
+
 &fn_is_fatestaff fcco=
     [localize(
         [if([member([iter([lcon(%vb)],[u(##/game_owner)] [u(##/game_staff)])],%0)],
             1,0
         )]
     )]
-    
+
 &fn_staff_for_game fcco=
     [localize(
         [setq(0,#-1)]
@@ -1178,17 +1187,17 @@ Add to Cron List:
         )]
         %q0
     )]
-            
+
 &fn_find_game fcco=
     [localize([if([isint(%0)],
         [if([setr(0,[extract([sort([lcon(%vb)])],%0,1)])],%q0,#-1)],
         [if([setr(0,[iter([lcon(%vb)],[if([strmatch([u(##/game_name)],%0*)],##)],%b,@@)])],%q0,#-1)]
     )])]
-    
-    
+
+
 &fn_find_stress fcco=
     [localize([if([setr(0,[iter([lattr(%0/stress_*)],[if([strmatch([extract([u(%0/##)],1,1,:)],%1*)],##)],%b,@@)])],%q0)])]
-    
+
 &fn_find_consequence fcco=
     [localize(
         [switch(
@@ -1207,8 +1216,8 @@ Add to Cron List:
             #-2
         )]
     )]
-             
-    
+
+
 &fn_can_post_job fcco=
     [localize([switch(
         [not([u(%va/FN_GUEST,%0)])]
@@ -1220,8 +1229,8 @@ Add to Cron List:
         110*,[name(%q0)] is not yours. You can only modify your own jobs or jobs with public access.,
         1110,That job is locked and cannot be changed at this time.,
         1
-    )])] 
-    
+    )])]
+
 &cmd_dice fcco=$+dice*:
     @switch
         [if(
@@ -1279,7 +1288,7 @@ Add to Cron List:
         [setq(t,self)]
         [if([not(%qe)],
             [setq(m,
-                [subheader([fatepref()] [name(%#)] to%b 
+                [subheader([fatepref()] [name(%#)] to%b
                     [switch(
                         [isdbref(%qk)][gt([strlen(%ql)],0)],
                         1*,[name(%qk)][setq(t,job)],
@@ -1305,7 +1314,9 @@ Add to Cron List:
 @@ HELP FILE for +dice
 
 +info/add +help/dice=Help on +Dice/%b%b+dice %[<skill name>%] %[<modifiers>%] %[=<targets>%]%r%r%b%bFor FATE games, rolls four Fate Dice (a special d6, with two blank sides, two sides marked with a +, and two sides marked with a -) and then adds up the results, giving you a possible range of -4 to +4. There are a number of optional arguments available as well, each of which can be used separate of the others:%r%r%b%b* <skill name>: If you are a character with statted skills, this will add%r[space(18)]the rank of the named skill to your final total.%r%r%b%b* <modifiers>:  A list of positive and negatives values (e.g. + 2 - 4) that%r[space(18)]will be added to your final total.%r%r%b%b* <targets>:%b%b%b%bThis is actually two options in one. The first is a space-%r[space(18)]separated list of user names; each of these people will be%r[space(18)]privately shown your roll and the results, rather than%r[space(18)]those results being shown to the whole room as is default. %r%r[space(18)]The second option is "=job <#>". In this case, the results%r[space(18)]of the roll will be added as a comment to the listed job,%r[space(18)]presuming you have permission to access the listed job.
- 
+
+
+@@ Help file for +sheet needs to be written
 
 @@ Set these up as permanent functions, through whatever method you usually use
 
@@ -1333,7 +1344,7 @@ Add to Cron List:
         #-1 FUNCTION (RIGHTCOL) REQUIRES INTEGER FOR ARGUMENT 2
     )]
 
-&fn_fateladder fcco=[if(
+&fn_fateladder XXXX=[if(
     [isint(%0)],
         [switch(%0,
             7,Epic,
@@ -1356,15 +1367,17 @@ Add to Cron List:
         )],
         [fatepref()] Not a valid integer
     )]
-   
-    
-&fn_fatepref fcco=
+
+
+&fn_fatepref XXXX=
     %xn%xcFATE:%xn
 
 
+
+
 &has_access #28=[or(u(%va/FN_STAFFALL,%#),u(#425/FN_IS_FATESTAFF,%#))]
-    
-    
+
+
 &summary #28=[rjust(ansi(hc,Game:),10)]%b[ifelse(u(%va/FN_HASATTRP,%0,GAME),[u([get(%0/GAME)]/game_name)],Unset)]
 &summary_order #28=GAME
 &LOG_GAME #28=[ifelse([u(%va/FN_HASATTRP,%0,GAME)],[u([get(%0/GAME)]/game_name)],Unset)]
@@ -1373,8 +1386,8 @@ Add to Cron List:
 &PROCESS_GAME #28=[setq(3,GAME)][setq(1,[u(#425/fn_find_game,%0)])][if([isdbref(%q1)],1,0)]
 
 &help #28=%rThis bucket is for queries from staff to players.%r%r[u(%va/FN_BREAK,ansi(hc,Settings for +job/sumset))]%r[ljust(ansi(h,GAME),10)] Accepts either a game number based on the +games list, or a matching name. This should be automatically set in most cases, and makes certain that staff for the listed game have proper access to this job.
-    
-    
+
+
 &hook_oth #33=
     &ASSIGNED_TO %0=%1;
     @eval [localize(
@@ -1390,6 +1403,6 @@ Add to Cron List:
         {
             @pemit %#=You have created plot job number [inc(get(%va/JOBS_NUM))] entitled '[u(%va/FN_STRTRUNC,trim(%0),30)]'.;
             @trigger %va/TRIG_CREATE=%#,u(%va/FN_FIND-BUCKET,TPS),1,[u(%va/FN_STRTRUNC,trim(secure(%0)),30)],trim(%1),,,4
-        }    
-        
+        }
+
 +info/add +help/plot=Help on +plot/%b%b+plot <title>=<description>%r%rThis command, locked to those who are set as Staff for a FATE game, creates a new job in the TPS bucket for keeping track of active plots. TPS jobs have extensive available summary information, and these fields should be accessible via +job/sumset once the job has been opened.

@@ -6,26 +6,28 @@
  * @ingroup Extensions
  */
 
-class SpecialFateGameConfig extends SpecialPage {
+class SpecialFateGame extends SpecialPage {
     public function __construct() {
-        parent::__construct( 'FateGameConfig', 'fatestaff' );
+        parent::__construct( 'FateGame', 'fatestaff' );
     }
 
     /**
      * Show the page to the user
      *
      * @param string $sub The subpage string argument (if any).
-     *  [[Special:FateGameConfig/subpage]].
+     *  [[Special:FateGame/subpage]].
      */
     public function execute( $sub ) {
+        global $wgExtensionDirectory;
+
         $user = $this->getUser();
         $out = $this->getOutput();
         $request = $this->getRequest();
         $action = $request->getVal('action');
-        
+
         $this->setHeaders();
-        $out->setPageTitle( $this->msg( 'fategameconfig' ) );
-        
+        $out->setPageTitle( $this->msg( 'fategame' ) );
+
         if ($user->isAnon()) {
             $out->addHTML("<div class='error' style='font-weight: bold; color: red'>You must be logged in to access this page.</div>");
         } elseif (!$user->isAllowed('fatestaff')) {
@@ -55,20 +57,29 @@ class SpecialFateGameConfig extends SpecialPage {
                     $this->viewPendingApprovals();
                 }
             } elseif ($sub == 'Create') {
-                $out->addWikiText('* Create a New Game');
+                if ($action == 'new') {
+                    $results = $this->processCreateForm();
+                    if (count($results['error']) == 0) {
+                        $this->saveGameCreate($results);
+                    } else {
+                        $this->viewGameCreate($results);
+                    }
+                } else {
+                    $this->viewGameCreate();
+                }
             } elseif ($sub == 'Delete') {
                 $out->addWikiText('* Delete a specific Game');
             } else {
                 $this->listAllGames();
             }
-        }   
+        }
     }
-    
+
     private function saveGameEdits( $game_id, $results ) {
         $output = $this->getOutput();
         $game = new FateGame($game_id);
         $dbw = wfGetDB(DB_MASTER);
-        
+
         foreach ($results['delete'] as $type => $data) {
             foreach ($data as $stat_id => $junk) {
                 if ($type == FateGameGlobals::STAT_MODE) {
@@ -83,7 +94,7 @@ class SpecialFateGameConfig extends SpecialPage {
                 }
             }
         }
-        
+
         foreach ($results['edit'] as $type => $data) {
             foreach ($data as $stat_id => $changes) {
                 if ($type == FateGameGlobals::STAT_MODE) {
@@ -153,7 +164,7 @@ class SpecialFateGameConfig extends SpecialPage {
                 }
             }
         }
-        
+
         foreach($results['new'] as $stat_type => $rows) {
             foreach ($rows as $row => $data) {
                 if ($row == 'max') {
@@ -196,15 +207,15 @@ class SpecialFateGameConfig extends SpecialPage {
             }
         }
     }
-    
+
     private function processEditGameForm() {
         $request = $this->getRequest();
         $data = $request->getValues();
         $game_id = $request->getInt('game_id');
         $game = new FateGame($game_id);
-        
+
         $output = $this->getOutput();
-        
+
         $results = array(
             'delete' => array(),
             'edit' => array(),
@@ -212,14 +223,14 @@ class SpecialFateGameConfig extends SpecialPage {
             'error' => array(),
             'form' => $data
         );
-        
+
         // Start by hunting deletes
         foreach ($data as $key => $value) {
             if (preg_match("/^(\d+)_delete_(\d+)$/", $key, $matches)) {
                 $results['delete'][$matches[1]][$matches[2]] = 1;
             }
         }
-        
+
         // Now look for edits
         foreach ($data as $key => $value) {
             if (preg_match("/^(\d+)_skill_(\d+)_(?!new_)(\d+)$/", $key, $matches)) {
@@ -227,26 +238,26 @@ class SpecialFateGameConfig extends SpecialPage {
                 $field = 'skill';
                 $skill_id = $matches[2];
                 $mode_id = $matches[3];
-                
+
                 if ($results['delete'][$type][$mode_id]) {
                     continue;
                 }
-                
+
                 if (in_array($skill_id, $game->modes_by_id[$mode_id]['skill_list']) && $value) {
                     continue;
                 }
-                
+
                 $results['edit'][$type][$mode_id][$field][$skill_id] = $value;
             } elseif (preg_match("/^(\d+)_([a-zA-Z]+)_(?!new_)(\d+)$/", $key, $matches)) {
                 $type = $matches[1];
                 $field = $matches[2];
                 $id = $matches[3];
-                
+
                 // Skip if we're already deleting
                 if ($results['delete'][$type][$id]) {
                     continue;
                 }
-                
+
                 if ($type == FateGameGlobals::STAT_MODE) {
                     if ($field == 'label' && $game->modes_by_id[$id]['label'] == $value) {
                         continue;
@@ -254,11 +265,11 @@ class SpecialFateGameConfig extends SpecialPage {
                         continue;
                     }
                 }
-                
+
                 $results['edit'][$type][$id][$field] = $value;
             }
         }
-        
+
         // Go through modes, look for things we may have turned off
         foreach ($game->modes as $mode) {
             if ($mode['is_weird'] && !$data[FateGameGlobals::STAT_MODE . "_weird_" . $mode['mode_id']]) {
@@ -270,8 +281,8 @@ class SpecialFateGameConfig extends SpecialPage {
                 }
             }
         }
-        
-        
+
+
         // Finally, look for new info
         foreach ($data as $key => $value) {
             if (preg_match("/^(\d+)_skill_(\d+)_new_(\d+)$/", $key, $matches)) {
@@ -279,7 +290,7 @@ class SpecialFateGameConfig extends SpecialPage {
                 $field = 'skill';
                 $skill_id = $matches[2];
                 $grouping = $matches[3];
-                
+
                 $results['new'][$type][$grouping][$field][$skill_id] = $value;
                 if ($results['new'][$type]['max'] < $grouping) {
                     $results['new'][$type]['max'] = $grouping;
@@ -288,7 +299,7 @@ class SpecialFateGameConfig extends SpecialPage {
                 $type = $matches[1];
                 $field = $matches[2];
                 $grouping = $matches[3];
-                
+
                 $results['new'][$type][$grouping][$field] = $value;
                 if ($results['new'][$type]['max'] < $grouping) {
                     $results['new'][$type]['max'] = $grouping;
@@ -300,35 +311,360 @@ class SpecialFateGameConfig extends SpecialPage {
                 if ($row_index == 'max') {
                     continue;
                 }
-                
+
                 if ($type == FateGameGlobals::STAT_MODE && !$row['label']) {
                     unset($results['new'][$type][$row_index]);
                 }
             }
         }
-        
+
         return $results;
     }
-    
+
+    private function processCreateForm() {
+        $request = $this->getRequest();
+        $data = $request->getValues();
+
+        $results = array(
+            'error' => array(),
+            'form' => $data
+        );
+
+        $required = array('game_name', 'game_status', 'game_description');
+        foreach ($required as $field) {
+            if (!$data[$field]) {
+                $results['error'][$field] = 1;
+            }
+        }
+
+        # If we do have a name, make sure it's not duplicate
+        if ($data['game_name']) {
+            $dbr = wfGetDB(DB_SLAVE);
+            $game_list = $dbr->select(
+                array( 'fate_game' ),
+                array( 'game_id' ),
+                array( 'game_name' => $data['game_name'] )
+            );
+            if ($game_list->numRows() > 0) {
+                $results['error']['game_name'] = 1;
+            }
+        }
+
+        return $results;
+    }
+
+    private function saveGameCreate( $results ) {
+        $output = $this->getOutput();
+        $dbw = wfGetDB(DB_MASTER);
+        # TODO: CLEAN DATA HERE, YOU GOOF+
+        $new_game = array(
+            'game_name' => $results['form']['game_name'],
+            'game_status' => $results['form']['game_status'],
+            'game_description' => $results['form']['game_description'],
+            'register_id' => $results['form']['game_owner']
+        );
+        $new_aspects = array();
+        $new_skills = array();
+        $new_stress = array();
+        $new_consequences = array();
+
+        # If we selected a game template, then set all the things that go with it
+        # TODO: expand this to include all game config options (modes, conditions, etc)
+        if ($results['form']['game_template']) {
+            global $wgExtensionDirectory;
+            $template_dir = $wgExtensionDirectory . "/FateCharGen/templates";
+            $file = $template_dir . '/' . $results['form']['game_template'];
+            $contents = file_get_contents($file);
+            $data = json_decode($contents);
+
+            # We're going to assume here that the json file is valid, because
+            # checked validation earlier when generating the drop-down list
+            if (property_exists($data, 'aspects')) {
+                $new_game['aspect_count'] = $data->{'aspects'}->{'count'};
+                if (property_exists($data->{'aspects'}, 'labeled')) {
+                    foreach ($data->{'aspects'}->{'labeled'} as $labeled) {
+                        $aspect = array(
+                            'game_aspect_label' => $labeled->{'label'}
+                        );
+                        if (property_exists($labeled, 'major')) {
+                            $aspect['is_major'] = $labeled->{'major'};
+                        }
+                        if (property_exists($labeled, 'secret')) {
+                            $aspect['is_secret'] = $labeled->{'secret'};
+                        }
+                        if (property_exists($labeled, 'shared')) {
+                            $aspect['is_shared'] = $labeled->{'shared'};
+                        }
+                        $new_aspects[] = $aspect;
+                    }
+                }
+            }
+            if (property_exists($data, 'skills')) {
+                if ($data->{'skills'}->{'distribution'} == 'Approaches') {
+                    $new_game['skill_distribution'] = FateGameGlobals::SKILL_DISTRIBUTION_APPROACHES;
+                    $new_game['skill_alternative'] = "Approaches";
+                }
+                $new_game['skill_max'] = $data->{'skills'}->{'max'};
+                $new_game['skill_points'] = implode('|', $data->{'skills'}->{'points'});
+                foreach ($data->{'skills'}->{'list'} as $skill) {
+                    $new_skills[] = array('game_skill_label' => $skill->{'label'});
+                }
+            }
+            if (property_exists($data, 'stunts')) {
+                $new_game['stunt_count'] = $data->{'stunts'}->{'free'};
+            }
+            if (property_exists($data, 'refresh')) {
+                $new_game['refresh_rate'] = $data->{'refresh'};
+            }
+            if (property_exists($data, 'stress')) {
+                $new_game['stress_count'] = $data->{'stress'}->{'count'};
+                foreach ($data->{'stress'}->{'tracks'} as $track) {
+                    $stress = array(
+                        'game_stress_label' => $track->{'label'}
+                    );
+                    $new_stress[] = $stress;
+                }
+            }
+            if (property_exists($data, 'consequences')) {
+                $new_game['use_consequences'] = 1;
+                foreach ($data->{'consequences'} as $consequence) {
+                    $new_consequences[] = array(
+                        'game_consequence_label' => $consequence->{'label'},
+                        'game_consequence_display_value' => $consequence->{'value'}
+                    );
+                }
+            }
+        }
+        $new_game['create_date'] = $dbw->timestamp();
+        $new_game['modified_date'] = $dbw->timestamp();
+        $dbw->insert( 'fate_game', $new_game );
+
+        $game_id = $dbw->insertId();
+
+        # Once we have a game id, we can try and set up everything else if they
+        # chose a template to use (aspects, skills, etc)
+        if ($new_aspects) {
+            foreach ($new_aspects as $aspect) {
+                $aspect['game_id'] = $game_id;
+                $dbw->insert( 'fate_game_aspect', $aspect);
+            }
+        }
+        if ($new_skills) {
+            $skill_ids = array();
+            foreach ($new_skills as $skill) {
+                $skill['game_id'] = $game_id;
+                $dbw->insert( 'fate_game_skill', $skill );
+                $skill_ids[$skill['game_skill_label']] = $dbw->insertId();
+            }
+            if (property_exists($data->{'skills'}, "turn order")) {
+                $arrays = array(
+                    $data->{'skills'}->{'turn order'}->{'mental'},
+                    $data->{'skills'}->{'turn order'}->{'physical'}
+                );
+                foreach ($arrays as $flag => $array) {
+                    foreach ($array as $index => $skill) {
+                        $order = array(
+                            'is_physical' => $flag,
+                            'ordinal' => $index + 1,
+                            'skill_id' => $skill_ids[$skill],
+                            'game_id' => $game_id
+                        );
+                        $dbw->insert( 'fate_game_turn_order', $order);
+                    }
+                }
+            }
+        }
+        if ($new_stress) {
+            foreach ($new_stress as $stress) {
+                $stress['game_id'] = $game_id;
+                $dbw->insert( 'fate_game_stress', $stress );
+            }
+        }
+        if ($new_consequences) {
+            foreach ($new_consequences as $consequence) {
+                $consequence['game_id'] = $game_id;
+                $dbw->insert( 'fate_game_consequence', $consequence );
+            }
+        }
+        $new_link = Linker::link($this->getPageTitle()->getSubpage("View"), "View New Game", array(), array( 'game_id' => $game_id ), array ( 'forcearticlepath' ) );
+        $list_link = Linker::link($this->getPageTitle(), "List All Games", array(), array(), array ( 'forcearticlepath' ) );
+        $results = "<p>New game was created!<ul><li>$new_link</li><li>$list_link</li></ul></p>";
+        $output->addHTML($results);
+    }
+
+    private function viewGameCreate( $results = array() ) {
+        $user = $this->getUser();
+        $output = $this->getOutput();
+        $registered = $this->getRegisteredCharacters();
+
+        $table = '';
+        if ($user->isAllowed('fategm')) {
+            if (!$registered) {
+                $table .= "<div class='error' style='font-weight: bold; color: red;'>Must have a registered character to create new games.</div>";
+            } else {
+                $table .= $this->getCreateGameForm($results);
+            }
+        } else {
+            $table .= "<div class='error' style='font-weight: bold; color: red;'>You don't have permission to create new games.</div>";
+        }
+        $output->addHTML($table);
+    }
+
+    private function getCreateGameForm( $results = array() ) {
+        $user = $this->getUser();
+        $request = $this->getRequest();
+
+        $form_url = $this->getPageTitle()->getSubPage('Create')->getLinkURL();
+        $template_list = $this->getGameTemplateSelect($request);
+        $character_list = $this->getRegisteredCharacterSelect($request);
+        $game_name = $request->getVal('game_name');
+        $game_status = $request->getVal('game_status');
+        $game_description = $request->getVal('game_description');
+        $action = $request->getVal('action');
+
+        $error_messages = array();
+        foreach ($results['error'] as $error => $flag) {
+            if ($error == 'game_name' && $game_name) {
+                $error_messages['game_name'] = "<tr><td>&nbsp;</td><td class='error'>Game name already in use; please try another.</td></tr>";
+            } else {
+                $error_messages[$error] = "<tr><td>&nbsp;</td><td class='error'>Field Required.</td></tr>";
+            }
+        }
+
+        $form = <<< EOT
+            <form action="$form_url" method="post">
+                <input type='hidden' name='action' value='new'/>
+                <fieldset>
+                    <legend>Create New Game</legend>
+                    <table>
+                        <tbody>
+                        <tr>
+                            <td class='mw-label'><label for='cgname'>New Game Name:</label></td>
+                            <td class='mw-input'><input id='cgname' type='text' name='game_name' value='$game_name' size='35'/></td>
+                        </tr>
+                        {$error_messages['game_name']}
+                        <tr>
+                            <td class='mw-label'><label for='cgstatus'>Initial Game Status:</label></td>
+                            <td class='mw-input'><input id='cgstatus' type='text' name='game_status' value='$game_status' size='35'/></td>
+                        </tr>
+                        {$error_messages['game_status']}
+                        <tr>
+                            <td class='mw-label'><label for='cgdescription'>Game Description:</label></td>
+                            <td class='mw-input'><textarea id='cgdescription' name='game_description' row=3 cols=80>$game_description</textarea></td>
+                        </tr>
+                        {$error_messages['game_description']}
+                        <tr>
+                            <td class='mw-label'><label for='cgowner'>Game Owner:</label></td>
+                            <td class='mw-input'>$character_list</td>
+                        </tr>
+                        <tr>
+                            <td class='mw-label'><label for='cgtemplate'>Configure from Template:</label></td>
+                            <td class='mw-input'>$template_list</td>
+                        </tr>
+                        </tbody>
+                    </table>
+                    <span class='mw-htmlform-submit-buttoms'>
+                        <input class='mw-htmlform-submit' type='submit' value='Create'/>
+                    </span>
+                </fieldset>
+            </form>
+EOT;
+
+        return $form;
+    }
+
+    private function getGameTemplateSelect( $request ) {
+        $game_template = $request->getVal('game_template');
+        $templates = $this->getGameTemplateArray();
+
+        $select = "<select name='game_template' id='cgtemplate'>";
+        foreach ($templates as $file => $name) {
+            $selected = ($file == $game_template ? 'selected' : '');
+            $select .= "<option value='" . $file . "' $selected>" . $name . "</option>";
+        }
+        $selected = ($game_template == '' ? 'selected' : '');
+        $select .= "<option value='' $selected>Customize From Scratch</option>";
+        $select .= "</select>";
+
+        return $select;
+    }
+
+    private function getRegisteredCharacterSelect( $request ) {
+        $game_owner = $request->getVal('game_owner');
+        $characters = $this->getRegisteredCharacters();
+
+        $select = "<select name='game_owner' id='cgowner'>";
+        if ($characters) {
+            foreach ($characters as $register_id => $canon_name) {
+                $selected = ($register_id == $game_owner ? 'selected' : '');
+                $select .= "<option value='" . $register_id . "' $selected>" . $canon_name . "</option>";
+            }
+        } else {
+            $select .= "<option value=''>No registered characters found.</option>";
+        }
+
+        return $select;
+    }
+
+    private function getRegisteredCharacters() {
+        $user = $this->getUser();
+        $characters = array();
+        $dbr = wfGetDB(DB_SLAVE);
+
+        $character_list = $dbr->select(
+            array( 'muxregister_register' ),
+            array( 'register_id',
+                   'canon_name' ),
+            array( 'user_id' => $user->getID() )
+        );
+        if ($character_list->numRows() > 0) {
+            foreach ($character_list as $character) {
+                $characters[$character->register_id] = $character->canon_name;
+            }
+        }
+
+        return $characters;
+    }
+
+    private function getGameTemplateArray() {
+        global $wgExtensionDirectory;
+
+        $templates = array();
+        $template_dir = $wgExtensionDirectory . "/FateCharGen/templates";
+        $template_files = scandir($template_dir);
+        foreach ($template_files as $t) {
+            if ($t == '.' || $t == '..') {
+                continue;
+            } else {
+                $file = $template_dir . '/' . $t;
+                $contents = file_get_contents($file);
+                $data = json_decode($contents);
+                // TODO: add routine to validate template json
+                $templates[$t] = $data->{'name'};
+            }
+        }
+        return $templates;
+    }
+
     private function processApprovalForm() {
         $request = $this->getRequest();
         $data = $request->getValues();
         $game_id = $request->getInt('game_id');
         $game = new FateGame($game_id);
-        
+
         $output = $this->getOutput();
-        
+
         $results = array(
             'approve' => array(),
             'deny' => array(),
             'error' => array(),
             'form' => $data
         );
-        
+
         foreach ($data as $key => $value) {
             if (preg_match("/^approve_(\d+)_(\d+)$/", $key, $matches)) {
                 $results['approve'][$matches[1]][$matches[2]] = 1;
-                
+
             } elseif (preg_match("/deny_(\d+)_(\d+)$/", $key, $matches)) {
                 if ($data['reason_' . $matches[1] . '_' . $matches[2]]) {
                     $results['deny'][$matches[1]][$matches[2]] = $data['reason_' . $matches[1] . '_' . $matches[2]];
@@ -337,7 +673,7 @@ class SpecialFateGameConfig extends SpecialPage {
                 }
             }
         }
-        
+
         return $results;
     }
 
@@ -347,7 +683,7 @@ class SpecialFateGameConfig extends SpecialPage {
         $game = new FateGame($game_id);
         $made_update = 0;
         $dbw = wfGetDB(DB_MASTER);
-        
+
         foreach ($results['deny'] as $fractal_id => $data) {
             foreach ($data as $pending_id => $reason) {
                 $updates = array(
@@ -362,7 +698,7 @@ class SpecialFateGameConfig extends SpecialPage {
                 );
             }
         }
-        
+
         foreach ($results['approve'] as $fractal_id => $data) {
             foreach ($data as $pending_id => $flag) {
                 $fractal = new FateFractal($fractal_id);
@@ -405,7 +741,7 @@ class SpecialFateGameConfig extends SpecialPage {
                 );
                 $made_update = 1;
             }
-        }    
+        }
 
         if ($made_update) {
             $dbw->update(
@@ -413,14 +749,14 @@ class SpecialFateGameConfig extends SpecialPage {
                 array( 'update_date' => $dbw->timestamp() ),
                 array( 'fractal_id' => $fractal_id )
             );
-        }        
+        }
     }
-    
+
     private function viewPendingApprovals( $results = array() ) {
         $user = $this->getUser();
         $output = $this->getOutput();
         $request = $this->getRequest();
-        
+
         $game_id = $request->getInt('game_id');
         $table = '';
         if ($game_id) {
@@ -438,13 +774,13 @@ class SpecialFateGameConfig extends SpecialPage {
             $table .= "<div class='error' style='font-weight: bold; color: red'>Missing game_id argument; don't know which game to show.</div>";
         }
         $output->addHTML($table);
-    }   
-                 
+    }
+
     private function editGame( $results = array() ) {
         $user = $this->getUser();
         $output = $this->getOutput();
         $request = $this->getRequest();
-        
+
         $game_id = $request->getInt('game_id');
         $table = '';
         if ($game_id) {
@@ -463,15 +799,15 @@ class SpecialFateGameConfig extends SpecialPage {
         }
         $output->addHTML($table);
     }
-    
+
     private function getApproveForm( $game, $results ) {
         $user = $this->getUser();
         $output = $this->getOutput();
         $request = $this->getRequest();
-        
+
         $form_url = $this->getPageTitle()->getSubPage('Approval')->getLinkURL();
         $game_id = $game->game_id;
-        
+
         $form = '<h2>Process Approvals for: ' . $game->game_name . '</h2>';
         if ($game->pending_stat_approvals) {
             $form .= <<<EOT
@@ -499,9 +835,9 @@ EOT;
                     $form .= "<div class='successbox'><strong>Approvals updated.</strong></div>";
                 }
             }
-            
+
             // TODO: Check for characters that need to be approved
-            
+
             // Now look for individual stats that need approval
             if ($game->pending_stat_approvals) {
                 $form .= "<fieldset><legend>Pending Stats</legend><table width='100%'><tbody>";
@@ -521,17 +857,17 @@ EOT;
                         }
                         $form .= "</td></tr>";
                     }
-                }       
-                $form .= "</tbody></table></fieldset>";   
+                }
+                $form .= "</tbody></table></fieldset>";
             }
             $form .= "<span class='mw-htmlform-submit-buttons'><input class='mw-htmlform-submit' type='submit' value='Update'/></span></form>";
         } else {
             $form .= "<div class='error' style='font-weight: bold; color: red;'>No pending approvals found for this game.</div>";
         }
-        
+
         return $form;
     }
-    
+
     private function getApproveStunt( $pending, $original, $results ) {
         $label = ($original ? 'Update' : 'New') . " Stunt:";
         $fields = '';
@@ -563,7 +899,7 @@ EOT;
 EOT;
         return $form;
     }
-    
+
     private function getApproveAspect( $pending, $original, $results ) {
         $label = ($original ? 'Rename' : 'New') . ($pending->{stat_label} ? ' ' . $pending->{stat_label} : '') . " Aspect:";
         $fields = '';
@@ -590,7 +926,7 @@ EOT;
 EOT;
         return $form;
     }
-    
+
     private function getApproveFields( $fractal_id, $pending_stat_id, $results ) {
         $id = $fractal_id . '_' . $pending_stat_id;
         $checked = ($results['form']["deny_$id"] ? 'checked' : '');
@@ -614,29 +950,29 @@ EOT;
         }
         return $fields;
     }
-    
+
     private function getDenial( $pending ) {
         $denial = "<tr><td>&nbsp;</td><td><strong>Denied on " . FateGameGlobals::getDisplayDate($pending->{modified_date}) . ":</strong> " . $pending->{denied_reason} . "</td></tr>";
         return $denial;
     }
-    
+
     private function getEditGameForm( $game, $results ) {
         $user = $this->getUser();
         $output = $this->getOutput();
         $request = $this->getRequest();
-        
+
         $form_url = $this->getPageTitle()->getSubPage('Edit')->getLinkURL();
         $game_id = $game->game_id;
         $skill_list = $this->getGameSkillsJS( $game );
         $staff_list = $this->getAvailableStaffJS();
         $const = FateGameGlobals::getStatConsts();
-        
+
         $form .= <<<EOT
             <script type='text/javascript'>
                 $skill_list
                 $staff_list
                 var TYPE_MODE = {$const['mode']};
-                
+
                 function addNewModeSection( id ) {
                     var check = document.getElementById('eg' + TYPE_MODE + '_label_new_' + (parseInt(id) + 1));
                     if (!check) {
@@ -743,7 +1079,7 @@ EOT;
                 $form .= "<div class='successbox'><strong>Game configuration updated.</strong></div>";
             }
         }
-        
+
         $form .= <<<EOT
             <fieldset>
                 <legend>Basic Attributes</legend>
@@ -761,7 +1097,7 @@ EOT;
                 <table>
                     <tbody>
 EOT;
-        
+
         if (count($game->staff) > 0) {
             foreach ($game->staff as $staff) {
                 $form .= "<tr><td class='mw-label'><label>Current Staff:</label></td>" .
@@ -772,7 +1108,7 @@ EOT;
             }
         }
         $form .= "</tbody></table></fieldset>";
-        
+
         if ($game->skill_distribution == FateGameGlobals::SKILL_DISTRIBUTION_MODES) {
             $form .= "<fieldset><legend>Configure Modes</legend><table><tbody id='config_modes'>";
             foreach ($game->modes as $mode) {
@@ -782,16 +1118,16 @@ EOT;
             $form .= $this->getEditModeSection($game, array( 'newrow' => 1 ), $results);
             $form .= "</tbody></table></fieldset>";
         }
-        
+
         $form .= "<span class='mw-htmlform-submit-buttons'><input class='mw-htmlform-submit' type='submit' value='Update'/></span></form>";
-        
+
         return $form;
     }
-    
+
     private function getAvailableStaffJS() {
         $js = "var staff_list = new Array();";
         $dbr = wfGetDB(DB_SLAVE);
-        
+
         $data = $dbr->select(
             array( 'r'  => 'muxregister_register',
                    'gs' => 'fate_game_staff',
@@ -812,7 +1148,7 @@ EOT;
         }
         return $js;
     }
-    
+
     private function getGameSkillsJS( $game ) {
         $js = "var skill_list = new Array();";
         foreach ($game->skills as $skill) {
@@ -820,7 +1156,7 @@ EOT;
         }
         return $js;
     }
-    
+
     private function getEditModeSection( $game, $mode, $results ) {
         $new_label = ($mode['mode_id'] ? '' : 'New ');
         $id_suffix = ($mode['mode_id'] ? $mode['mode_id'] : 'new_' . $mode['newrow']);
@@ -831,11 +1167,11 @@ EOT;
         if (!$mode['mode_id']) {
             $onchange = "onchange='addNewModeSection(" . $mode['newrow'] . ");'";
             $oninput = "oninput='addNewModeSection(" . $mode['newrow'] . ");'";
-            $delete_cells = "<td></td><td></td>"; 
+            $delete_cells = "<td></td><td></td>";
         } else {
             $delete_cells = "<td class='mw-label'><label for='eg{$modetype}_delete_$id_suffix'>Delete:</label></td>".
                             "<td class='mw-input'><input type='checkbox' id='eg{$modetype}_delete_$id_suffix' name='{$modetype}_delete_$id_suffix' value='1'/></td>";
-        }     
+        }
         $checked = ($mode['is_weird'] ? 'checked' : '');
         $mode_label = $mode['label'];
         $form = <<<EOT
@@ -851,13 +1187,13 @@ EOT;
                 <table>
                     <tbody>
 EOT;
-    
+
         $columns = 5;
         $count = 0;
         $close = 0;
         if (count($game->skills) == 0) {
             $form .= "<tr><td>No Skills yet defined; please add them before configuring modes.</td></tr>";
-        } else {    
+        } else {
             foreach ($game->skills as $skill) {
                 if ($count++ % $columns == 0) {
                     $form .= "<tr>";
@@ -876,22 +1212,22 @@ EOT;
         if ($close) {
             $form .= "</tr>";
         }
-        
+
         $form .= <<<EOT
                     </tbody>
                 </table>
                 </td>
             </tr>
 EOT;
-    
+
         return $form;
     }
-    
+
     private function viewSpecificGame() {
         $user = $this->getUser();
         $out  = $this->getOutput();
         $request = $this->getRequest();
-        
+
         $game_id = $request->getInt('game_id');
         if ($game_id) {
             $game = new FateGame($game_id);
@@ -998,12 +1334,12 @@ EOT;
                         $table .= implode(', ', $list) . "</td></tr>";
                     } else {
                         $table .= "<tr><td class='mw-label'>Conditions:</td><td colspan=3></td></tr>";
-                    }     
+                    }
                     $table .= "<tr><td class='mw-label'>Private Sheets:</td><td colspan=3>" . ($game->private_sheet ? 'Yes' : 'No') . "</td></tr>";
                     $table .= "<tr><td class='mw-label'>Use Atomic Robo style Refresh (Aspect count, don't subtract stunts):</td><td colspan=3>".
                               ($game->use_robo_refresh ? 'Yes' : 'No') . "</td></tr>";
                     $table .= "</table>";
-                    
+
                     if(count($game->fractals) > 0) {
                         /* Handle Characters first, if they exist */
                         if (count($game->fractals['Character']) > 0) {
@@ -1011,7 +1347,7 @@ EOT;
                             $table .= "<table class='wikitable'><caption>Characters<caption>".
                                       "<tr><th>Character Name</th><th>Wiki Name</th><th>Status</th></tr>";
                             foreach ($characters as $character) {
-                                $table .= "<tr><td>" . 
+                                $table .= "<tr><td>" .
                                           Linker::link(Title::newFromText('Special:FateStats')->getSubpage("ViewSheet"), $character[name], array(), array( 'fractal_id' => $character[fractal_id] ), array ( 'forcearticlepath' ) ) .
                                           "</td><td>".
                                           Linker::link(Title::newFromText('User:' . $character[user_name]), $character[user_name], array(), array(), array( 'forcearticlepath' ) ) .
@@ -1060,14 +1396,14 @@ EOT;
         } else {
             $out->addHTML("<div class='error' style='font-weight: bold; color: red'>Missing game_id argument; don't know which game to show.</div>");
         }
-        
+
     }
-    
+
     private function listAllGames() {
         $user = $this->getUser();
         $out = $this->getOutput();
         $dbr = wfGetDB(DB_SLAVE);
-        
+
         $games = $dbr->select(
             array( 'g' => 'fate_game',
                    'r' => 'muxregister_register'),
@@ -1085,7 +1421,7 @@ EOT;
             __METHOD__,
             array( 'ORDER BY' => 'g.game_name' )
         );
-        
+
         $table = '';
         if ($games->numRows() == 0) {
             $table .= "<div>No games are currently set up.</div>";
@@ -1100,7 +1436,7 @@ EOT;
                     array( 's.game_id' => $game->{game_id},
                            's.register_id = r.register_id' )
                 );
-                    
+
                 $staff = explode(' ', $game_staff->{staff});
                 $table .= "<tr><td valign='top' nowrap>";
                 if ($user->getID() == $game->{user_id} || in_array($user->getID(), $staff) || $user->isAllowed('fategm')) {
@@ -1119,9 +1455,14 @@ EOT;
             }
             $table .= "</table>";
         }
+        # If we have permission, also display the link to create a new game
+        if ($user->isAllowed('fategm')) {
+            $table .= "<ul><li>" . Linker::link($this->getPageTitle()->getSubpage("Create"), "Create New Game", array(), array(), array ( 'forcearticlepath' ) ) . "</li></ul>";
+        }
+
         $out->addHTML($table);
     }
-    
+
     protected function getGroupName() {
         return 'other';
     }

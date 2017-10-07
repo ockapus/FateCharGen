@@ -10,6 +10,6 @@ $specialPageAliases = array();
 
 /** English (English) */
 $specialPageAliases['en'] = array(
-    'FateGameConfig' => array( 'FateGameConfig' ),
+    'FateGame' => array( 'FateGame' ),
     'FateStats' => array( 'FateStats' )
 );

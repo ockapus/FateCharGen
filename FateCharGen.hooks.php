@@ -19,14 +19,14 @@ class FateCharGenHooks {
         $updater->addExtensionTable( 'fate_game_stress', __DIR__ . '/sql/GameStress.sql' );
         $updater->addExtensionTable( 'fate_game_turn_order', __DIR__ . '/sql/GameTurnOrder.sql' );
         $updater->addExtensionTable( 'fate_game_staff', __DIR__ . '/sql/GameStaff.sql' );
-        
+
         /* Tables that define the 'fractals' for a game, where a fractal is any thing that has stats */
         $updater->addExtensionTable( 'fate_fractal', __DIR__ . '/sql/Fractal.sql' );
         $updater->addExtensionTable( 'fate_fractal_stat', __DIR__ . '/sql/FractalStat.sql' );
         $updater->addExtensionTable( 'fate_pending_stat', __DIR__ . '/sql/PendingStat.sql' );
         return true;
     }
-    
+
     public static function addContentActions( &$skinTemplate, &$links ) {
         $user = $skinTemplate->getUser();
         $title = $skinTemplate->getTitle();
@@ -34,19 +34,19 @@ class FateCharGenHooks {
 
         $fractal_id = $request->getVal('fractal_id');
         $game_id = $request->getVal('game_id');
-        
+
         $subs = split('/', $title->getSubpageText());
         $sub = array_pop($subs);
-        
+
         if (1) {
             // Expand this at some point to only allow specific gms to edit specific things
             //$fractal = new FateFractal($fractal_id);
         }
-        
+
         // Tab links for the FateStats special page
         if ($title->isSpecial( 'FateStats' ) && $fractal_id &&
             ($sub == 'Edit' || $sub == 'View' || $sub == 'ViewSheet' || $sub == 'Milestones' ))
-        {            
+        {
             $fractal = new FateFractal($fractal_id);
             $view = '';
             if ($fractal->{fractal_type} == 'Character') {
@@ -56,11 +56,11 @@ class FateCharGenHooks {
             }
             $edit = SpecialPage::getTitleFor('FateStats', 'Edit');
             $milestone = SpecialPage::getTitleFor('FateStats', 'Milestones');
-            $game = SpecialPage::getTitleFor('FateGameConfig', 'View');
+            $game = SpecialPage::getTitleFor('FateGame', 'View');
             $view_class = ($sub == 'View' || $sub == 'ViewSheet' ? 'selected': false );
             $edit_class = ($sub == 'Edit' ? 'selected' : false );
             $mile_class = ($sub == 'Milestones' ? 'selected' : false );
-            
+
             if (!$fractal->is_private || $user->isAllowed('fategm') || $fractal->fate_game->is_staff($user->getID()) || $fractal->user_id == $user->getID()) {
                 $links['views'][$title->getNamespaceKey()] = array (
                     'class' => $view_class,
@@ -89,21 +89,21 @@ class FateCharGenHooks {
                     'href' => $game->getFullUrl("game_id=" . $fractal->{game_id})
                 );
             }
-        }        
-        
-        // Tab links for the FateGameConfig special page
+        }
+
+        // Tab links for the FateGame special page
         if (
             $user->isAllowed('fatestaff') &&
-            $title->isSpecial('FateGameConfig') && $game_id &&
+            $title->isSpecial('FateGame') && $game_id &&
             ($sub == 'Edit' || $sub == 'View' || $sub == 'Approval') )
         {
-            $view = SpecialPage::getTitleFor('FateGameConfig', 'View');
-            $edit = SpecialPage::getTitleFor('FateGameConfig', 'Edit');
-            $approval = SpecialPage::getTitleFor('FateGameConfig', 'Approval');
+            $view = SpecialPage::getTitleFor('FateGame', 'View');
+            $edit = SpecialPage::getTitleFor('FateGame', 'Edit');
+            $approval = SpecialPage::getTitleFor('FateGame', 'Approval');
             $view_class = ($sub == 'View' ? 'selected' : false);
             $edit_class = ($sub == 'Edit' ? 'selected' : false);
             $approval_class = ($sub == 'Approval' ? 'selected' : false);
-            
+
             $links['views']['view'] = array(
                 'class' => $view_class,
                 'text' => 'View',
@@ -120,21 +120,21 @@ class FateCharGenHooks {
                 'href' => $approval->getFullUrl("game_id=$game_id")
             );
         }
-        
+
         return true;
     }
-    
+
     public static function onParserSetup( Parser $parser ) {
         $parser->setHook( 'statblock', 'FateCharGenHooks::renderTagStatBlock' );
         return true;
     }
-    
+
     public static function renderTagStatBlock( $input, array $args, Parser $parser, PPFrame $frame ) {
         // TODO: Make Caching smarter later
         $parser->disableCache();
         $parserOutput = $parser->getOutput();
         $parserOutput->addModuleStyles('ext.FateCharGen.styles');
-        
+
         $result = '';
         $fractal_id = $args['fractal_id'];
         $game_name = $args['game'];
@@ -163,7 +163,7 @@ class FateCharGenHooks {
         } else {
             $result .= "<div class='error' style='font-weight: bold; color: red'>Statblock error: missing required argument(s) - fractal_id, or game and character</div>";
         }
-        
+
         return $result;
     }
 }

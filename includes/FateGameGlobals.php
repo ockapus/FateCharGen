@@ -16,17 +16,17 @@ class FateGameGlobals {
     const STAT_REFRESH = 8;
     const STAT_MODE = 9;
     const STAT_MOOK = 10;
-    
+
     function getSkillDistributionArray() {
         $array = array();
         $array[self::SKILL_DISTRIBUTION_PYRAMID] = 'Pyramid';
         $array[self::SKILL_DISTRIBUTION_COLUMNS] = 'Columns';
         $array[self::SKILL_DISTRIBUTION_MODES] = 'Modes';
         $array[self::SKILL_DISTRIBUTION_APPROACHES] = 'Approaches';
-    
+
         return $array;
     }
-    
+
     function getLadder() {
         $array = array();
         $array[-2] = 'Terrible';
@@ -40,36 +40,36 @@ class FateGameGlobals {
         $array[6]  = 'Fantastic';
         $array[7]  = 'Epic';
         $array[8]  = 'Legendary';
-        
+
         return $array;
     }
-    
+
     function getConditionCategories() {
         $array = array();
         $array[1] = 'Fleeting';
         $array[2] = 'Sticky';
         $array[4] = 'Lasting';
-        
+
         return $array;
     }
-    
+
     function getModeLevels() {
         $array = array();
         $array[0] = 'Trained';
         $array[1] = 'Focused';
         $array[2] = 'Specialized';
-        
+
         return $array;
     }
-    
+
     function getMookLevels() {
         $array = array();
         $array[-2] = 'Bad';
         $array[2]  = 'Skilled';
-        
+
         return $array;
     }
-    
+
     function getStatLabels() {
         $array = array();
         $array[self::STAT_ASPECT] = 'Aspects';
@@ -82,10 +82,10 @@ class FateGameGlobals {
         $array[self::STAT_REFRESH] = 'Refresh Rate';
         $array[self::STAT_MODE] = 'Modes';
         $array[self::STAT_MOOK] = 'Mook Skills';
-        
+
         return $array;
     }
-    
+
     function getStatConsts() {
         $array = array();
         $array['aspect'] = self::STAT_ASPECT;
@@ -98,7 +98,7 @@ class FateGameGlobals {
         $array['refresh'] = self::STAT_REFRESH;
         $array['mode'] = self::STAT_MODE;
         $array['mook'] = self::STAT_MOOK;
-        
+
         return $array;
     }
 

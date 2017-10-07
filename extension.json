@@ -4,7 +4,7 @@
     "author": [
         "[http://www.ockapus.com Christopher Mangum]"
     ],
-    "url": "http://ockapus.com/arcana/Extension:FateCharGen",
+    "url": "http://deadauthors.net/wiki/Extension:FateCharGen",
     "descriptionmsg": "fatechargen-desc",
     "license-name": "",
     "type": "specialpage",
@@ -13,7 +13,7 @@
         "FateGame": "includes/FateGame.php",
         "FateFractal": "includes/FateFractal.php",
         "FateGameGlobals": "includes/FateGameGlobals.php",
-        "SpecialFateGameConfig": "includes/specials/SpecialFateGameConfig.php",
+        "SpecialFateGame": "includes/specials/SpecialFateGame.php",
         "SpecialFateStats": "includes/specials/SpecialFateStats.php"
     },
     "ExtensionMessagesFiles": {
@@ -46,7 +46,7 @@
         ]
     },
     "SpecialPages": {
-        "FateGameConfig": "SpecialFateGameConfig",
+        "FateGame": "SpecialFateGame",
         "FateStats": "SpecialFateStats"
     },
     "GroupPermissions": {
@@ -56,11 +56,20 @@
        },
        "fatestaff": {
            "fatestaff": true
+       },
+       "fategm": {
+           "fategm": true
        }
     },
     "AvailableRights": [
        "fategm",
        "fatestaff"
     ],
+    "requires": {
+        "MediaWiki": ">= 1.25.0",
+        "extensions": {
+            "MuxRegister": "*"
+        }
+    },
     "manifest_version": 1
 }

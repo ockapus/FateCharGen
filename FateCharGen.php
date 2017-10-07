@@ -1,8 +1,8 @@
 <?php
 
 if (!defined('MUXREGISTER_VERSION')) {
-    die( "Extension <a href=\"http://aliencity.org/wiki/Extension:MuxRegister\">MuxRegister</a> must be installed for Fate Character Generation to run." );
-} elseif ( function_exists( 'wfLoadExtension' ) ) {       
+    die( "Extension <a href=\"http://deadauthors.net/wiki/Extension:MuxRegister\">MuxRegister</a> must be installed for Fate Character Generation to run." );
+} elseif ( function_exists( 'wfLoadExtension' ) ) {
     wfLoadExtension( 'FateCharGen' );
     // Keep i18n globals so mergeMessageFileList.php doesn't break
     $wgMessagesDirs['FateCharGen'] = __DIR__ . '/i18n';
