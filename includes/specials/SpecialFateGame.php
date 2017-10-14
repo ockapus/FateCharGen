@@ -69,9 +69,66 @@ class SpecialFateGame extends SpecialPage {
                 }
             } elseif ($sub == 'Delete') {
                 $out->addWikiText('* Delete a specific Game');
+            } elseif ($sub == 'ApproveRequest') {
+                $this->handleJoinRequest(1);
+            } elseif ($sub == "DenyRequest") {
+                $this->handleJoinRequest(0);
             } else {
                 $this->listAllGames();
             }
+        }
+    }
+
+    private function handleJoinRequest( $approve ) {
+        $output = $this->getOutput();
+        $request = $this->getRequest();
+        $user = $this->getUser();
+
+        $join_id = $request->getVal('request_id');
+
+        $dbr = wfGetDB(DB_SLAVE);
+        $join = $dbr->selectRow(
+            array( 'j' => 'fate_join_request',
+                   'r' => 'muxregister_register' ),
+            array( 'j.game_id',
+                   'j.register_id',
+                   'j.response_date',
+                   'r.canon_name' ),
+            array( 'j.join_request_id' => $join_id,
+                   'r.register_id = j.register_id' )
+        );
+
+        if (!$join) {
+            $output->addHTML("<p class='error'>Couldn't find that join request; please try again.</p>");
+        } else {
+            if ($join->{'response_date'}) {
+                $output->addHTML("<p class='error'>That join request has already been responded to.</p>");
+            } else {
+                $game = new FateGame($join->{'game_id'});
+                if ($game->is_staff($user->getID()) || $user->isAllowed('fategm')) {
+                    $dbw = wfGetDB(DB_MASTER);
+                    $update = array(
+                        'responder_id' => $user->getID(),
+                        'response_date' => $dbw->timestamp(),
+                        'was_approved' => $approve
+                    );
+                    $dbw->update( 'fate_join_request',
+                                   $update,
+                                   array( 'join_request_id' => $join_id )
+                    );
+                    if ($approve) {
+                        $character = $game->initializeCharacter($join->{'register_id'}, $join->{'game_id'});
+                        $output->addHTML("<p>Join request approved! ".
+                            Linker::link(Title::newFromText('Special:FateStats')->getSubpage("ViewSheet"), "View New Character", array(), array( 'fractal_id' => $character ), array ( 'forcearticlepath' ) ) .
+                            "</p>");
+                    } else {
+                        $output->addHTML("<p>Join request denied!</p>");
+                    }
+                } else {
+                    $output->addHTML("<p class='error'>You don't have permission to process requests for this game.</p>");
+                }
+            }
+            $output->addHTML("<ul><li>" . Linker::link($this->getPageTitle()->getSubPage('View'), 'Return to Game Overview', array(), array( 'game_id' => $join->{'game_id'} ), array( 'forcearticlepath' ) ) . "</li></ul>");
         }
     }
 
@@ -510,7 +567,7 @@ class SpecialFateGame extends SpecialPage {
         $output->addHTML($table);
     }
 
-    private function getCreateGameForm( $results = array() ) {
+    private function getCreateGameForm( $results ) {
         $user = $this->getUser();
         $request = $this->getRequest();
 
@@ -523,11 +580,13 @@ class SpecialFateGame extends SpecialPage {
         $action = $request->getVal('action');
 
         $error_messages = array();
-        foreach ($results['error'] as $error => $flag) {
-            if ($error == 'game_name' && $game_name) {
-                $error_messages['game_name'] = "<tr><td>&nbsp;</td><td class='error'>Game name already in use; please try another.</td></tr>";
-            } else {
-                $error_messages[$error] = "<tr><td>&nbsp;</td><td class='error'>Field Required.</td></tr>";
+        if (array_key_exists('error', $results)) {
+            foreach ($results['error'] as $error => $flag) {
+                if ($error == 'game_name' && $game_name) {
+                    $error_messages['game_name'] = "<tr><td>&nbsp;</td><td class='error'>Game name already in use; please try another.</td></tr>";
+                } else {
+                    $error_messages[$error] = "<tr><td>&nbsp;</td><td class='error'>Field Required.</td></tr>";
+                }
             }
         }
 
@@ -1338,6 +1397,9 @@ EOT;
                     $table .= "<tr><td class='mw-label'>Private Sheets:</td><td colspan=3>" . ($game->private_sheet ? 'Yes' : 'No') . "</td></tr>";
                     $table .= "<tr><td class='mw-label'>Use Atomic Robo style Refresh (Aspect count, don't subtract stunts):</td><td colspan=3>".
                               ($game->use_robo_refresh ? 'Yes' : 'No') . "</td></tr>";
+                    $table .= "<tr><td class='mw-label'>Open Chargen? (If no, then staff must approve requests from characters):</td>" .
+                              "<td colspan=3>" . ($game->is_open_chargen ? 'Yes' : 'No') . "</td></tr>";
+                    $table .= "<tr><td class='mw-label'>Accepting Characters:</td><td colspan=3>" . ($game->{is_accepting_characters} ? 'Yes' : 'No') . "</td></tr>";
                     $table .= "</table>";
 
                     if(count($game->fractals) > 0) {
@@ -1382,10 +1444,42 @@ EOT;
                         }
                     }
                     $table .= Linker::link(Title::newFromText('Special:FateStats')->getSubpage("Create"), 'Create New Fractal', array(), array( 'game_id' => $game_id ), array( 'forcearticlepath' ) );
-                    $table .= "<br/>" . Linker::link($this->getPageTitle()->getSubpage("InitializeCharacter"), "Initialize New Character (Temporary)", array(), array( 'game_id' => $game_id ), array( 'forcearticlepath' ));
                     if ($game->pending_stat_approvals) {
                         $table .= "<br/>" . Linker::link($this->getPageTitle()->getSubPage('Approval'), 'You have pending approvals', array(), array( 'game_id' => $game_id ), array( 'forcearticlepath' ) );
                     }
+
+                    /* Look to see if there are pending requests to enter chargen */
+                    $dbr = wfGetDB(DB_SLAVE);
+                    $pending_requests = $dbr->select(
+                        array( 'j' => 'fate_join_request',
+                               'r' => 'muxregister_register' ),
+                        array( 'j.join_request_id',
+                               'j.request_date',
+                               'r.canon_name' ),
+                        array( 'r.register_id = j.register_id',
+                               'j.response_date IS NULL',
+                               'j.game_id' => $game_id ),
+                        __METHOD__,
+                        array( 'ORDER BY' => array( 'request_date' ) )
+                    );
+
+                    if ($pending_requests->numRows()) {
+                        $table .= "<table class='wikitable'><caption>Pending Chargen Requests</caption>".
+                                  "<tr><th>Character Name</th><th>Request Date</th><th>Actions</th></tr>";
+                        foreach ($pending_requests as $pending) {
+                            $table .= "<tr><td>" . $pending->{'canon_name'} . "</td><td>".
+                                      FateGameGlobals::getDisplayDate($pending->{'request_date'}) .
+                                      "</td><td nowrap>" .
+                                      Linker::link($this->getPageTitle()->getSubpage("ApproveRequest"), "Approve", array(), array( 'request_id' => $pending->{'join_request_id'} ), array( 'forcearticlepath' )) .
+                                      " | ".
+                                      Linker::link($this->getPageTitle()->getSubpage("DenyRequest"), "Deny", array(), array( 'request_id' => $pending->{'join_request_id'} ), array( 'forcearticlepath' )) .
+                                      "</td></tr>";
+                        }
+                        $table .= "</table>";
+                    }
+
+                    /* TODO: Expand this eventually; view old requests, delete, etc */
+
                 } else {
                     $table .= "<div class='error' style='font-weight: bold; color: red;'>You are not approved staff for this game.</div>";
                 }

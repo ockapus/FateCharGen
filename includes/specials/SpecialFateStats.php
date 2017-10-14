@@ -103,6 +103,7 @@ class SpecialFateStats extends SpecialPage {
      * @param string $sub The subpage string argument (if any).
      *  [[Special:FateStats/subpage]].
      */
+    # TODO: standardize interface/structure
     public function execute( $sub ) {
         $user = $this->getUser();
         $out = $this->getOutput();
@@ -136,15 +137,15 @@ class SpecialFateStats extends SpecialPage {
             } elseif ($sub == 'Delete') {
                 $out->addWikiText('* Delete a specific Fractal');
             } elseif ($sub == 'Create') {
-                $result = array();
+                $results = array();
                 if ($action == 'create') {
-                    $result = $this->createFractal();
+                    $results = $this->createFractal();
                 }
-                if (count($result) == 0 || $result['error']) {
-                    $this->createFractalForm($result);
+                if (count($results) == 0 || $results['error']) {
+                    $this->createFractalForm($results);
                 } else {
                     // When it exists: go to the edit page
-                    $this->editFractal(intval($result['msg']),0);
+                    $this->editFractal(intval($results['msg']),0);
                 }
             } elseif ($sub == 'Milestones') {
                 $results = array();
@@ -157,10 +158,240 @@ class SpecialFateStats extends SpecialPage {
                 } else {
                     $this->viewMilestones($fractal_id);
                 }
+            } elseif ($sub == 'Init') {
+                #$results = array();
+                if ($request->wasPosted()) {
+                    $results = $this->processInitCharacterForm();
+                    if (count($results['error']) == 0) {
+                        $this->initCharacter($results);
+                    } else {
+                        $this->viewInitCharacter($results);
+                    }
+                } else {
+                    $this->viewInitCharacter();
+                }
             } else {
                 $this->listCharacters();
             }
         }
+    }
+
+    private function viewInitCharacter( $results = array() ) {
+        $user = $this->getUser();
+        $output = $this->getOutput();
+
+        $free_characters = $this->getFreeCharacters();
+        $open_games = $this->getOpenGames();
+
+        $table = '';
+        if (!$free_characters) {
+            $table .= "<div class='error' style='font-weight: bold; color: red'>You don't seem to have any registered characters free to enter chargen. Please create and +register a new login, then try again.</div>";
+        } elseif (!$open_games) {
+            $table .= "<div class='error' style='font-weight: bold; color: red'>There don't seem to be any games currently accepting new characters.</div>";
+        } else {
+            $table .= $this->getInitCharacterForm($results);
+        }
+        $table .=  "<ul><li>" . Linker::link($this->getPageTitle(), "Return to Character List", array(), array(), array( 'forcearticalpath' ) ) . "</li></ul>";
+
+        $output->addHTML($table);
+    }
+
+    private function getOpenGames() {
+        $dbr = wfGetDB(DB_SLAVE);
+        $games = $dbr->select(
+            array( 'g' => 'fate_game' ),
+            array( 'g.game_id',
+                   'g.game_name' ),
+            array( 'g.is_accepting_characters' => 1 ),
+            __METHOD__,
+            array( 'ORDER BY' => array( 'g.game_name' ) )
+        );
+
+        $open_games = array();
+        foreach ($games as $game) {
+            $open_games[$game->{'game_id'}] = $game->{'game_name'};
+        }
+        return $open_games;
+    }
+
+    private function getFreeCharacters() {
+        $user = $this->getUser();
+        $dbr = wfGetDB(DB_SLAVE);
+        $free_characters = $dbr->select(
+            array( 'm' => 'muxregister_register',
+                   'f' => 'fate_fractal' ),
+            array( 'm.register_id',
+                   'm.canon_name' ),
+            array( 'f.fractal_id' => NULL,
+                   'm.user_id' => $user->getID() ),
+            __METHOD__,
+            array( 'ORDER BY' => array( 'm.canon_name' ) ),
+            array( 'f' => array( 'LEFT JOIN', 'm.register_id = f.register_id' ) )
+        );
+
+        $characters = array();
+        foreach ($free_characters as $character) {
+            $pending_request = $dbr->selectRow(
+                array( 'j' => 'fate_join_request' ),
+                array( 'j.join_request_id' ),
+                array( 'j.register_id' => $character->{'register_id'},
+                       'j.response_date' => NULL)
+            );
+            if (!$pending_request) {
+                $characters[$character->{'register_id'}] = $character->{'canon_name'};
+            }
+        }
+        return $characters;
+    }
+
+    private function getInitCharacterForm( $results ) {
+        $user = $this->getUser();
+        $request = $this->getRequest();
+
+        $form_url = $this->getPageTitle()->getSubPage('Init')->getLinkURL();
+        $character_list = $this->getFreeCharacterSelect($request);
+        $game_list = $this->getOpenGameSelect($request);
+
+        $error_messages = array();
+        if ($results['error']['character']) {
+            $error_messages['character'] = "<tr><td>&nbsp;</td><td class='error'>Character unavailable to join a game, please select another.</td></tr>";
+        }
+        if ($results['error']['game']) {
+            $error_messages['game'] = "<tr><td>&nbsp;</td><td class='error'>Game no longer accepting characters.</td></tr>";
+        }
+
+        $form = <<< EOT
+            <form action="$form_url" method="post">
+                <fieldset>
+                    <legend>Join a Game</legend>
+                    <table>
+                        <tbody>
+                        <tr>
+                            <td class='mw-label'><label for='iccharacter'>Character:</label></td>
+                            <td class='mw-input'>$character_list</td>
+                        </tr>
+                        {$error_messages['character']}
+                        <tr>
+                            <td class='mw-label'><label for='icgame'>Game</label></td>
+                            <td class='mw-input'>$game_list</td>
+                        </tr>
+                        {$error_messages['game']}
+                        </tbody>
+                    </table>
+                    <span class='mw-htmlform-submit-buttoms'>
+                        <input class='mw-htmlform-submit' type='submit' value='Join'/>
+                    </span>
+                </fieldset>
+            </form>
+EOT;
+        return $form;
+    }
+
+    private function getFreeCharacterSelect( $request ) {
+        $character = $request->getVal('character');
+        $free_characters = $this->getFreeCharacters();
+
+        $select = "<select name='character' id='iccharacter'>";
+        if ($free_characters) {
+            foreach ($free_characters as $register_id => $name) {
+                $selected = ($register_id == $character ? 'selected' : '');
+                $select .= "<option value='$register_id' $selected>$name</option>";
+            }
+        } else {
+            $select .= "<option selected value='' disabled>No free characters found</option>";
+        }
+        $select .= "</select>";
+
+        return $select;
+    }
+
+    private function getOpenGameSelect( $request ) {
+        $game = $request->getVal('game');
+        $open_games = $this->getOpenGames();
+
+        $select = "<select name='game' id='icgame'>";
+        if ($open_games) {
+            foreach ($open_games as $game_id => $game_name) {
+                $selected = ($game_id == $game ? 'selected' : '');
+                $select .= "<option value='$game_id' $selected>$game_name</option>";
+            }
+        } else {
+            $select .= "<option selected disabled value=''>No open games found</option>";
+        }
+        $select .= "</select>";
+
+        return $select;
+    }
+
+    private function processInitCharacterForm() {
+        $request = $this->getRequest();
+        $data = $request->getValues();
+
+        $results = array(
+            'error' => array(),
+            'data' => $data
+        );
+
+        $dbr = wfGetDB(DB_SLAVE);
+        $fractal = $dbr->selectRow(
+            array( 'fate_fractal' ),
+            array( 'fractal_id' ),
+            array( 'register_id' => $data['character'] )
+        );
+        if ($fractal) {
+            $results['error']['character'] = 1;
+        } else {
+            $pending = $dbr->selectRow(
+                array( 'fate_join_request' ),
+                array( 'join_request_id' ),
+                array( 'register_id' => $data['character'],
+                       'response_date' => NULL )
+            );
+            if ($pending) {
+                $results['error']['character'] = 1;
+            }
+        }
+
+        $game = $dbr->selectRow(
+            array( 'fate_game' ),
+            array( 'is_accepting_characters' ),
+            array( 'game_id' => $data['game'] )
+        );
+        if (!$game->{'is_accepting_characters'}) {
+            $results['error']['game'] = 1;
+        }
+
+        return $results;
+    }
+
+    private function initCharacter( $results ) {
+        $output = $this->getOutput();
+
+        $game = new FateGame($results['data']['game']);
+        $error = 1;
+        $display = '';
+        if ($game->is_accepting_characters) {
+            if ($game->is_open_chargen) {
+                $game->initializeCharacter($results['data']['character'], $results['data']['game']);
+                $display .= "<p>New Character initalized and ready to enter chargen!</p>";
+            } else {
+                $dbw = wfGetDB(DB_MASTER);
+                $request = array(
+                    'game_id' => $results['data']['game'],
+                    'register_id' => $results['data']['character'],
+                    'request_date' => $dbw->timestamp()
+                );
+                $dbw->insert( 'fate_join_request', $request );
+                $display .= "<p>Request submitted to staff to join game.</p>";
+            }
+            $error = 0;
+        }
+        if ($error) {
+            $display .= "<p class='error'>Something went wrong attempting to initialize character. Please try again.</p>";
+        }
+        $display .=  "<ul><li>" . Linker::link($this->getPageTitle(), "Return to Character List", array(), array(), array( 'forcearticalpath' ) ) . "</li></ul>";
+
+        $output->addHTML($display);
     }
 
     private function saveMilestoneResults( $fractal_id, $results ) {
@@ -923,14 +1154,33 @@ EOT;
             array( 'user_id' => $user->getID(),
                    'fractal_type' => 'Character' ),
             __METHOD__,
-            array( 'ORDER BY' => array ('fractal_type', 'fractal_name', 'canon_name' ) ),
+            array( 'ORDER BY' => array('fractal_type', 'fractal_name', 'canon_name' ) ),
             array( 'r' => array( 'LEFT JOIN', 'f.register_id = r.register_id' ),
                    'g' => array( 'JOIN', 'f.game_id = g.game_id' ) )
         );
 
+        $pending_list = $dbr->select(
+            array( 'j' => 'fate_join_request',
+                   'g' => 'fate_game',
+                   'r1' => 'muxregister_register' ),
+            array( 'j.game_id',
+                   'g.game_name',
+                   'r1.canon_name',
+                   'j.request_date',
+                   'j.responder_id',
+                   'j.response_date',
+                   'j.was_approved'),
+            array( 'r1.user_id' => $user->getID(),
+                   'j.was_approved is NULL OR j.was_approved = 0' ),
+            __METHOD__,
+            array( 'ORDER BY' => array( 'j.request_date' ) ),
+            array( 'g' => array( 'JOIN', 'j.game_id = g.game_id' ),
+                   'r1' => array( 'JOIN', 'j.register_id = r1.register_id' ) )
+        );
+
         $table = "<table class='wikitable'>".
                  "<tr><th>Character Name</th><th>Game</th><th>Status</th></tr>";
-        if ($fractal_list->numRows() == 0) {
+        if ($fractal_list->numRows() == 0 && $pending_list->numRows() == 0) {
             $table .= "<tr><td colspan=100%>No Characters Found</td></tr>";
         } else {
             foreach ($fractal_list as $fractal) {
@@ -958,8 +1208,27 @@ EOT;
                 }
                 $table .= "</td><td>" . $status . " on " . FateGameGlobals::getDisplayDate($status_date) . "</td></tr>";
             }
-            $table .= "</table>";
         }
+        if ($pending_list->numRows() > 0) {
+            $table .= "<tr><th colspan=100%>Pending Requests</th></tr>";
+            foreach ($pending_list as $pending) {
+                $table .= "<tr><td>" . $pending->{'canon_name'} . "</td><td>";
+                if ($user->isAllowed('fatestaff')) {
+                    $table .= Linker::link(Title::newFromText('Special:FateGame')->getSubpage('View'), $pending->{'game_name'}, array(), array( 'game_id' => $pending->{'game_id'} ), array( 'forcearticlepath' ) );
+                } else {
+                    $table .= $pending->{'game_name'};
+                }
+                $table .= "</td><td>";
+                if ($pending->{'response_date'}) {
+                    $table .= ($pending->{'was_approved'} == 1 ? 'Approved' : 'Denied') .
+                              " on " . FateGameGlobals::getDisplayDate($pending->{'response_date'}) . "</td></tr>";
+                } else {
+                    $table .= "Request submitted on " . FateGameGlobals::getDisplayDate($pending->{'request_date'}) . "</td></tr>";
+                }
+            }
+        }
+        $table .= "</table>";
+        $table .= "<ul><li>" . Linker::link($this->getPageTitle()->getSubpage('Init'), "Join a Game", array(), array(), array( 'forcearticalpath' ) ) . "</li></ul>";
         $out->addHTML($table);
     }
 

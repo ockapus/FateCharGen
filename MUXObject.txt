@@ -25,7 +25,7 @@ Add to Cron List:
 
 &sql_fractal_stats fcco=select '%0', f.*, a.is_major, a.is_secret from [u(TBL_PRE)]fate_fractal_stat f left join [u(TBL_PRE)]fate_game_aspect a on (f.parent_id = a.game_aspect_id and f.stat_type = 1) where fractal_id = %1;
 
-&sql_updated_games fcco=select g.game_id, g.game_name, g.game_description, g.game_status, g.skill_distribution, g.skill_alternative, g.modified_date, r.character_dbref from [u(TBL_PRE)]fate_game g, [u(TBL_PRE)]muxregister_register r where g.register_id = r.register_id and g.modified_date > [u(last_game_update)];
+&sql_updated_games fcco=select g.game_id, g.game_name, g.game_description, g.game_status, g.skill_distribution, g.skill_alternative, g.is_open_chargen, g.is_accepting_characters, g.modified_date, r.character_dbref from [u(TBL_PRE)]fate_game g, [u(TBL_PRE)]muxregister_register r where g.register_id = r.register_id and g.modified_date > [u(last_game_update)];
 
 &sql_game_turn_order fcco=select '%0', t.is_physical, t.ordinal, s.game_skill_label from [u(TBL_PRE)]fate_game_turn_order t, [u(TBL_PRE)]fate_game_skill s where t.skill_id = s.game_skill_id and t.game_id = %1 order by is_physical, ordinal;
 
@@ -100,7 +100,7 @@ Add to Cron List:
     @eval [if(
         [not([isdbref([setr(0,[locate(%vb,Game [setr(1,[extract([rsrec(|)],1,1,|)])],iT)])])])],
         [setq(0,[create(Game [extract([rsrec(|)],1,1,|)],10)])]
-        [set(%q0, game_owner:[extract([rsrec(|)],8,1,|)])]
+        [set(%q0, game_owner:[extract([rsrec(|)],10,1,|)])]
         [tel(%q0, %vb)]
     )];
     @set/quiet %q0=game_name:[extract([rsrec(|)],2,1,|)];
@@ -108,7 +108,9 @@ Add to Cron List:
     @set/quiet %q0=game_status:[extract([rsrec(|)],4,1,|)];
     @set/quiet %q0=skill_distribution:[extract([rsrec(|)],5,1,|)];
     @set/quiet %q0=skill_alternative:[extract([rsrec(|)],6,1,|)];
-    @if [gt([extract([rsrec(|)],7,1,|)],[u(last_game_update)])]=@set/quiet me=last_game_update:[extract([rsrec(|)],7,1,|)];
+    @set/quiet %q0=is_open_chargen:[if([eq([extract([rsrec(|)],7,1,|)],1)],1,0)];
+    @set/quiet %q0=is_accepting_characters:[if([eq([extract([rsrec(|)],8,1,|)],1)],1,0)];
+    @if [gt([extract([rsrec(|)],9,1,|)],[u(last_game_update)])]=@set/quiet me=last_game_update:[extract([rsrec(|)],9,1,|)];
     @query/sql %#/tr_game_turn_order=[u(db_name)]/[u(sql_game_turn_order,%q0,%q1)];
     @query/sql %#/tr_game_staff=[u(db_name)]/[u(sql_game_staff,%q0,%q1)];
     @if [rsnext()]={@trigger/quiet me/tr_update_single_game}
@@ -458,6 +460,8 @@ Add to Cron List:
         [rjust(Staff:%b,[u(colsize)])][sort([iter([u(%q0/game_staff)],[name(##)],%b,|)],a,|,%,%b)]%r
         [rjust(Description:%b,[u(colsize)])][rightcol([u(%q0/game_description)],[u(colsize)])]%r
         [rjust(Status:%b,[u(colsize)])][u(%q0/game_status)]%r
+        [rjust(Open Chargen:%b,[u(colsize)])][if([eq([u(%q0/is_open_chargen)],1)],Yes,No)]%r
+        [rjust(Accepting Characters:%b,[u(colsize)])][if([eq([u(%q0/is_accepting_characters)],1)],Yes,No)]%r
         [if([lattr(%q0/aspect_*)],
             [subheader(Game Aspects)]%r
             [iter([sortby(sort_aspects,[iter([lattr(%q0/aspect_*)],[u(%q0/##)], ,|)],|,|)],

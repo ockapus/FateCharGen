@@ -24,6 +24,9 @@ class FateCharGenHooks {
         $updater->addExtensionTable( 'fate_fractal', __DIR__ . '/sql/Fractal.sql' );
         $updater->addExtensionTable( 'fate_fractal_stat', __DIR__ . '/sql/FractalStat.sql' );
         $updater->addExtensionTable( 'fate_pending_stat', __DIR__ . '/sql/PendingStat.sql' );
+
+        /* Tables related to character generation */
+        $updater->addExtensionTable( 'fate_join_request', __DIR__ . '/sql/JoinRequest.sql' );
         return true;
     }
 

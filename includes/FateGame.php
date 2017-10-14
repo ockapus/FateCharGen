@@ -23,13 +23,16 @@ class FateGame {
     public $use_consequences;
     public $consequences;
     public $private_sheet;
+    public $use_robo_refresh;
+    public $is_open_chargen;
+    public $is_accepting_characters;
     public $fractals;
     public $create_date;
     public $modified_date;
-    
+
     public function __construct( $game_id ) {
         $this->game_id = $game_id;
-        
+
         $dbr = wfGetDB(DB_SLAVE);
         $data = $dbr->selectRow(
             array( 'g' => 'fate_game',
@@ -52,12 +55,15 @@ class FateGame {
                    'g.stress_count',
                    'g.use_consequences',
                    'g.private_sheet',
+                   'g.use_robo_refresh',
+                   'g.is_open_chargen',
+                   'g.is_accepting_characters',
                    'g.create_date',
                    'g.modified_date' ),
             array( 'r.register_id = g.register_id',
                    'g.game_id' => $game_id )
         );
-        
+
         if ($data) {
             $this->register_id = $data->{register_id};
             $this->user_name = $data->{user_name};
@@ -77,9 +83,11 @@ class FateGame {
             $this->use_consequences = ((bool) $data->{use_consequences});
             $this->private_sheet = ((bool) $data->{private_sheet});
             $this->use_robo_refresh = ((bool) $data->{use_robo_refresh});
+            $this->is_open_chargen = ((bool) $data->{is_open_chargen});
+            $this->is_accepting_characters = ((bool) $data->{is_accepting_characters});
             $this->create_date = $data->{create_date};
             $this->modified_date = $data->{modified_date};
-            
+
             $aspect_list = $dbr->select(
                 'fate_game_aspect',
                 '*',
@@ -102,7 +110,7 @@ class FateGame {
                     $this->aspects_by_id[$aspect->{game_aspect_id}] = $asp;
                 }
             }
-            
+
             $skill_list = $dbr->select(
                 'fate_game_skill',
                 '*',
@@ -124,7 +132,7 @@ class FateGame {
                     $this->skills_by_id[$sk['skill_id']] = $sk;
                 }
             }
-            
+
             if ($this->skill_distribution == FateGameGlobals::SKILL_DISTRIBUTION_MODES) {
                 $mode_list = $dbr->select(
                     'fate_game_mode',
@@ -156,7 +164,7 @@ class FateGame {
                     $this->modes_by_id[$mo['mode_id']] = $mo;
                 }
             }
-                
+
             $stress_list = $dbr->select(
                 'fate_game_stress',
                 '*',
@@ -174,7 +182,7 @@ class FateGame {
                     $this->stress_tracks[] = $st;
                 }
             }
-            
+
             if ($this->use_consequences) {
                 $consequence_list = $dbr->select(
                     'fate_game_consequence',
@@ -194,7 +202,7 @@ class FateGame {
                     }
                 }
             }
-            
+
             $turn_list = $dbr->select(
                 'fate_game_turn_order',
                 '*',
@@ -211,7 +219,7 @@ class FateGame {
                     $this->turn_order[$turn->{is_physical}][$turn->{ordinal}] = $turn->{skill_id};
                 }
             }
-            
+
             $staff_list = $dbr->select(
                 array( 's' => 'fate_game_staff',
                        'r' => 'muxregister_register' ),
@@ -229,7 +237,7 @@ class FateGame {
                     $this->staff[$staff->{user_id}] = $staff;
                 }
             }
-            
+
             $fractal_list = $dbr->select(
                 array( 'f' => 'fate_fractal',
                        'r' => 'muxregister_register',
@@ -257,7 +265,7 @@ class FateGame {
             $this->pending_stat_approvals = 0;
             if ($fractal_list->numRows() > 0) {
                 foreach ($fractal_list as $fractal) {
-                    $frac = array( 
+                    $frac = array(
                         'fractal_id' => $fractal->{fractal_id},
                         'name' => ($fractal->{canon_name} ? $fractal->{canon_name} : $fractal->{fractal_name} ),
                         'user_name' => $fractal->{user_name},
@@ -279,7 +287,7 @@ class FateGame {
             }
         }
     }
-    
+
     public function is_staff( $user_id ) {
         $found = false;
         if ($this->user_id == $user_id) {
@@ -287,7 +295,75 @@ class FateGame {
         } elseif (array_key_exists($user_id, $this->staff)) {
             $found = true;
         }
-        
+
         return $found;
+    }
+
+    public function initializeCharacter( $register_id, $game_id ) {
+        $dbr = wfGetDB(DB_SLAVE);
+        $char = $dbr->selectRow(
+            array( 'f' => 'fate_fractal' ),
+            array( 'f.fractal_id' ),
+            array( 'f.register_id' => $register_id )
+        );
+
+        # If fractal for this register_id already exists, then bail out
+        if ($char) {
+            return NULL;
+        } else {
+            $dbw = wfGetDB(DB_MASTER);
+            $new_character = array(
+                'game_id' => $game_id,
+                'register_id' => $register_id,
+                'fractal_type' => 'Character',
+                'create_date' => $dbw->timestamp(),
+                'update_date' => $dbw->timestamp()
+            );
+            $dbw->insert( 'fate_fractal', $new_character );
+            $fractal_id = $dbw->insertId();
+
+            # Once we have a fractal id, start setting basic stats: fate/refresh
+            $fate = array(
+                'fractal_id' => $fractal_id,
+                'stat_type' => FateGameGlobals::STAT_FATE,
+                'modified_date' => $dbw->timestamp(),
+                'stat_value' => $this->refresh_rate
+            );
+            $dbw->insert( 'fate_fractal_stat', $fate );
+            $fate['stat_type'] = FateGameGlobals::STAT_REFRESH;
+            $dbw->insert( 'fate_fractal_stat', $fate );
+
+            # Then set standard stress tracks
+            foreach ($this->stress_tracks as $stress_track) {
+                $stress = array(
+                    'fractal_id' => $fractal_id,
+                    'stat_type' => FateGameGlobals::STAT_STRESS,
+                    'modified_date' => $dbw->timestamp(),
+                    'stat_label' => $stress_track['label'],
+                    'stat_value' => 0,
+                    'stat_max_value' => $this->stress_count
+                );
+                $dbw->insert( 'fate_fractal_stat', $stress );
+            }
+
+            # Finally, deal with Conditions or Consequences
+            # TODO: Conditions (when we fill them in everywhere else)
+            if ($this->use_consequences) {
+                foreach ($this->consequences as $consequence) {
+                    $con = array(
+                        'fractal_id' => $fractal_id,
+                        'stat_type' => FateGameGlobals::STAT_CONSEQUENCE,
+                        'stat_label' => $consequence['label'],
+                        'stat_field' => '',
+                        'stat_display_value' => $consequence['display_value'],
+                        'modified_date' => $dbw->timestamp()
+                    );
+                    $dbw->insert( 'fate_fractal_stat', $con );
+                }
+            }
+
+            # If we got here, and we successfully initialized, return our fractal_id
+            return $fractal_id;
+        }
     }
 }

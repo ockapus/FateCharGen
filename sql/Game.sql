@@ -1,7 +1,7 @@
 -- Game table setup for FateCharGen extension
 -- Created originally for Alien City
 -- porpentine@gmail.com
--- Last Update: December 4, 2015
+-- Last Update: October 7, 2017
 
 -- Add primary game table
 CREATE TABLE IF NOT EXISTS /*_*/fate_game (
@@ -24,8 +24,8 @@ CREATE TABLE IF NOT EXISTS /*_*/fate_game (
     skill_distribution tinyint default NULL,
     -- What is the skill cap for starting characters in chargen?
     skill_max int default NULL,
-    -- If using columns or approaches, how many skill points do characters get to distribute in chargen? 
-    -- Can be single number, or can be |-deliniated list of values to assign 
+    -- If using columns or approaches, how many skill points do characters get to distribute in chargen?
+    -- Can be single number, or can be |-deliniated list of values to assign
     -- (For instance, with basic FAE Approaches: 3|2|2|1|1
     skill_points varchar(128) default NULL,
     -- What is the default starting Refresh rate?
@@ -40,6 +40,10 @@ CREATE TABLE IF NOT EXISTS /*_*/fate_game (
     private_sheet tinyint default NULL,
     -- Boolean flag: use Atomic Robo model -- refresh = aspect count, don't subtract for stunts
     use_robo_refresh tinyint default NULL,
+    -- Boolean flag: is chargen open to all comers, or do you have to make a request for staff?
+    is_open_chargen tinyint default NULL,
+    -- Boolean flag: is this game accepting new characters? Won't show on 'join game' list if not
+    is_accepting_characters tinyint default NULL,
     -- When was this game created
     create_date varbinary(14) default NULL,
     -- When were settings last modified?
