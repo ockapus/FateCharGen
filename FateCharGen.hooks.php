@@ -27,6 +27,10 @@ class FateCharGenHooks {
 
         /* Tables related to character generation */
         $updater->addExtensionTable( 'fate_join_request', __DIR__ . '/sql/JoinRequest.sql' );
+        $updater->addExtensionTable( 'fate_chargen', __DIR__ . '/sql/Chargen.sql' );
+        $updater->addExtensionTable( 'fate_chargen_required', __DIR__ . '/sql/ChargenRequired.sql' );
+        $updater->addExtensionTable( 'fate_chargen_help', __DIR__ . '/sql/ChargenHelp.sql' );
+        $updater->addExtensionTable( 'fate_chargen_stat', __DIR__ . '/sql/ChargenStat.sql' );
         return true;
     }
 

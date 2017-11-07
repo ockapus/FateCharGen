@@ -86,6 +86,22 @@ class FateGameGlobals {
         return $array;
     }
 
+    function getConstToStat() {
+        $array = array();
+        $array[self::STAT_ASPECT] = 'aspect';
+        $array[self::STAT_SKILL] = 'skill';
+        $array[self::STAT_STUNT] = 'stunt';
+        $array[self::STAT_STRESS] = 'stress';
+        $array[self::STAT_CONDITION] = 'condition';
+        $array[self::STAT_CONSEQUENCE] = 'consequence';
+        $array[self::STAT_FATE] = 'fate';
+        $array[self::STAT_REFRESH] = 'refresh';
+        $array[self::STAT_MODE] = 'mode';
+        $array[self::STAT_MOOK] = 'mook';
+
+        return $array;
+    }
+
     function getStatConsts() {
         $array = array();
         $array['aspect'] = self::STAT_ASPECT;

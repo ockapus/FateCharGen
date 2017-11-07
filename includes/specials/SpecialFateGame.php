@@ -27,6 +27,7 @@ class SpecialFateGame extends SpecialPage {
 
         $this->setHeaders();
         $out->setPageTitle( $this->msg( 'fategame' ) );
+        $out->addModules( 'ext.FateCharGen.styles' );
 
         if ($user->isAnon()) {
             $out->addHTML("<div class='error' style='font-weight: bold; color: red'>You must be logged in to access this page.</div>");
@@ -55,6 +56,17 @@ class SpecialFateGame extends SpecialPage {
                     $this->viewPendingApprovals($results);
                 } else {
                     $this->viewPendingApprovals();
+                }
+            } elseif ($sub == "ApproveCharacter") {
+                if ($request->wasPosted()) {
+                    $results = $this->processCharacterApproval();
+                    if (count($results['error']) == 0) {
+                        $this->saveCharacterApproval($results);
+                    } else {
+                        $this->viewCharacterApproval($results);
+                    }
+                } else {
+                    $this->viewCharacterApproval();
                 }
             } elseif ($sub == 'Create') {
                 if ($action == 'new') {
@@ -130,6 +142,163 @@ class SpecialFateGame extends SpecialPage {
             }
             $output->addHTML("<ul><li>" . Linker::link($this->getPageTitle()->getSubPage('View'), 'Return to Game Overview', array(), array( 'game_id' => $join->{'game_id'} ), array( 'forcearticlepath' ) ) . "</li></ul>");
         }
+    }
+
+    private function processCharacterApproval() {
+        $user = $this->getUser();
+        $output = $this->getOutput();
+        $request = $this->getRequest();
+        $data = $request->getValues();
+
+        $results = array(
+            'error' => array(),
+            'form' => $data
+        );
+
+        $fractal_id = $request->getVal('fractal_id');
+        if (!$fractal_id) {
+            $results['error'][] = 'fractal_id';
+        } else {
+            $fractal = new FateFractal($fractal_id);
+            if (!$fractal->name) {
+                $results['error'][] = 'fractal';
+            } elseif (! ($fractal->fate_game->is_staff($user->getID()) || $user->isAllowed('fategm'))) {
+                $results['error'][] = 'staff';
+            } elseif ($fractal->fractal_type != 'Character') {
+                $results['error'][] = 'character';
+            } elseif (!$fractal->submit_date) {
+                $results['error'][] = 'submit';
+            } elseif ($fractal->approve_date) {
+                $results['error'][] = 'approve';
+            }
+        }
+
+        return $results;
+    }
+
+    private function viewCharacterApproval( $results = array() ) {
+        $user = $this->getUser();
+        $output = $this->getOutput();
+        $request = $this->getRequest();
+
+        $fractal_id = $request->getVal('fractal_id');
+        $text = '';
+        if (!$fractal_id) {
+            $text .= "<div class='errorbox'>Missing fractal_id argument; check URL and try again.</div>";
+        } else {
+            $fractal = new FateFractal($fractal_id);
+            if (!$fractal->name) {
+                $text .= "<div class='errorbox'>No data found for that fractal_id; check URL and try again.</div>";
+            }  elseif (! ($fractal->fate_game->is_staff($user->getID()) || $user->isAllowed('fategm'))) {
+                $text .= "<div class='errorbox'>You are not approved staff for the game this fractal belongs to.</div>";
+            } elseif ($fractal->fractal_type != 'Character') {
+                $text .= "<div class='errorbox'>This is not a Character; please check the fractal_id and try again.</div>";
+            } elseif (!$fractal->submit_date) {
+                $text .= "<div class='errorbox'>This Character has not yet been submitted for approval.</div>";
+            } elseif ($fractal->approve_date) {
+                $text .= "<div class='errorbox'>This Character has already been approved.</div>";
+            } else {
+                $text .= $this->getCharacterApproval($fractal, $results);
+            }
+        }
+
+        $output->addHTML($text);
+    }
+
+    private function getCharacterApproval( $fractal, $results ) {
+        $game = $fractal->fate_game;
+        $text .= "<h2>Character Approval for " . $game->game_name . "</h2>";
+
+        $form_url = $this->getPageTitle()->getSubPage('ApproveCharacter')->getLinkURL();
+        $stat_block = $fractal->getChargenFractalBlock();
+        $text .= <<< EOT
+            <form action="$form_url" method='post'>
+                <input type='hidden' name='fractal_id' value="{$fractal->fractal_id}"/>
+                <fieldset>
+                    <legend>Review Character Stats</legend>
+                    $stat_block
+                    <div>If any changes need to be made, stats can be edited after approval.</div>
+                    <span class='mw-htmlform-submit-buttons'>
+                        <input class='mw-htmlform-submit' type='submit' value='Approve Character'/>
+                    </span>
+                </fieldset>
+            </form>
+EOT;
+
+        $text .= "<div>" . Linker::link($this->getPageTitle()->getSubPage('View'), 'Return to Game Overview', array(), array( 'game_id' => $game->game_id ), array( 'forcearticlepath' )) . "</div>";
+        return $text;
+    }
+
+    private function saveCharacterApproval( $results ) {
+        $output = $this->getOutput();
+        $request = $this->getRequest();
+        $fractal_id = $results['form']['fractal_id'];
+        $fractal = new FateFractal($fractal_id);
+
+        $dbw = wfGetDB(DB_MASTER);
+        $form_array = $fractal->fate_game->chargen->calculateFormArray($fractal->fate_game, FateGameGlobals::STAT_ASPECT);
+        $stunts = array();
+        foreach ($fractal->chargen as $key => $value) {
+            if (preg_match("/^([[:alpha:]]+)_([[:alpha:]]+)_(\d+)$/", $key, $matches)) {
+                if ($matches[1] == 'aspect') {
+                    $new_aspect = array(
+                        'fractal_id' => $fractal_id,
+                        'stat_type' => FateGameGlobals::STAT_ASPECT,
+                        'stat_field' => $value['value'],
+                        'modified_date' => $dbw->timestamp()
+                    );
+                    if ($form_array[$matches[3]]) {
+                        $new_aspect['parent_id'] = $form_array[$matches[3]];
+                        $new_aspect['stat_label'] = $fractal->fate_game->aspects_by_id[$form_array[$matches[3]]]['label'];
+                    }
+                    $dbw->insert('fate_fractal_stat', $new_aspect);
+                } elseif ($matches[1] == 'skill') {
+                    $new_skill = array(
+                        'fractal_id' => $fractal_id,
+                        'stat_type' => FateGameGlobals::STAT_SKILL,
+                        'modified_date' => $dbw->timestamp()
+                    );
+                    if ($fractal->fate_game->skill_distribution == FateGameGlobals::SKILL_DISTRIBUTION_APPROACHES) {
+                        $new_skill['stat_label'] = $fractal->fate_game->skills_by_id[$value['value']]['label'];
+                        $new_skill['parent_id'] = $value['value'];
+                        $new_skill['stat_value'] = $fractal->fate_game->skill_points[$matches[3]];
+                    }
+                    $dbw->insert('fate_fractal_stat', $new_skill);
+                } elseif ($matches[1] == 'stunt') {
+                    if (! is_array($stunts[$matches[3]])) {
+                        $stunts[$matches[3]] = array();
+                    }
+                    $stunts[$matches[3]][$matches[2]] = $value['value'];
+                }
+            }
+        }
+        if ($stunts) {
+            foreach ($stunts as $stunt) {
+                $new_stunt = array(
+                    'fractal_id' => $fractal_id,
+                    'stat_type' => FateGameGlobals::STAT_STUNT,
+                    'stat_field' => $stunt['field'],
+                    'stat_description' => $stunt['description'],
+                    'modified_date' => $dbw->timestamp()
+                );
+                $dbw->insert('fate_fractal_stat', $new_stunt);
+            }
+        }
+        // Now that we've converted all our stats, do cleanup
+        $dbw->delete(
+            'fate_chargen_stat',
+            array( 'fractal_id' => $fractal_id )
+        );
+        $dbw->update(
+            'fate_fractal',
+            array( 'approve_date' => $dbw->timestamp(),
+                   'update_date' => $dbw->timestamp() ),
+            array( 'fractal_id' => $fractal_id )
+        );
+
+        $output->addHTML("<div class='successbox'>" . $fractal->name . " was approved.</div>");
+        $request->setVal('game_id', $fractal->fate_game->game_id);
+        $this->viewSpecificGame();
     }
 
     private function saveGameEdits( $game_id, $results ) {
@@ -424,6 +593,8 @@ class SpecialFateGame extends SpecialPage {
         $new_skills = array();
         $new_stress = array();
         $new_consequences = array();
+        $new_chargen = array();
+        $consts = FateGameGlobals::getStatConsts();
 
         # If we selected a game template, then set all the things that go with it
         # TODO: expand this to include all game config options (modes, conditions, etc)
@@ -491,6 +662,27 @@ class SpecialFateGame extends SpecialPage {
                     );
                 }
             }
+
+            if (property_exists($data, 'chargen')) {
+                $ordinal = 1;
+                foreach ($data->chargen as $chargen) {
+                    $new_section = array(
+                        'stat_type' => $consts[$chargen->stat],
+                        'chargen_label' => $chargen->label,
+                        'instructions' => $chargen->instruction,
+                        'ordinal' => $ordinal
+                    );
+                    $ordinal++;
+                    if (property_exists($chargen, 'required')) {
+                        $new_section['has_requirements'] = 1;
+                        $new_section['required'] = $chargen->required;
+                    }
+                    if (property_exists($chargen, 'help')) {
+                        $new_section['help'] = $chargen->help;
+                    }
+                    $new_chargen[] = $new_section;
+                }
+            }
         }
         $new_game['create_date'] = $dbw->timestamp();
         $new_game['modified_date'] = $dbw->timestamp();
@@ -500,18 +692,21 @@ class SpecialFateGame extends SpecialPage {
 
         # Once we have a game id, we can try and set up everything else if they
         # chose a template to use (aspects, skills, etc)
+        $parent_ids = array();
         if ($new_aspects) {
+            $parent_ids[FateGameGlobals::STAT_ASPECT] = array();
             foreach ($new_aspects as $aspect) {
                 $aspect['game_id'] = $game_id;
                 $dbw->insert( 'fate_game_aspect', $aspect);
+                $parent_ids[FateGameGlobals::STAT_ASPECT][$aspect['game_aspect_label']] = $dbw->insertId();
             }
         }
         if ($new_skills) {
-            $skill_ids = array();
+            $parent_ids[FateGameGlobals::STAT_SKILL] = array();
             foreach ($new_skills as $skill) {
                 $skill['game_id'] = $game_id;
                 $dbw->insert( 'fate_game_skill', $skill );
-                $skill_ids[$skill['game_skill_label']] = $dbw->insertId();
+                $parent_ids[FateGameGlobals::STAT_SKILL][$skill['game_skill_label']] = $dbw->insertId();
             }
             if (property_exists($data->{'skills'}, "turn order")) {
                 $arrays = array(
@@ -523,7 +718,7 @@ class SpecialFateGame extends SpecialPage {
                         $order = array(
                             'is_physical' => $flag,
                             'ordinal' => $index + 1,
-                            'skill_id' => $skill_ids[$skill],
+                            'skill_id' => $parent_ids[FateGameGlobals::STAT_SKILL][$skill],
                             'game_id' => $game_id
                         );
                         $dbw->insert( 'fate_game_turn_order', $order);
@@ -543,6 +738,57 @@ class SpecialFateGame extends SpecialPage {
                 $dbw->insert( 'fate_game_consequence', $consequence );
             }
         }
+        if ($new_chargen) {
+            foreach ($new_chargen as $chargen) {
+                $chargen['game_id'] = $game_id;
+                $help = '';
+                $required = '';
+                if (array_key_exists('required', $chargen)) {
+                    if (is_array($chargen['required'])) {
+                        $required = $chargen['required'];
+                    } else {
+                        $chargen['requirement_count'] = $chargen['required'];
+                    }
+                    unset($chargen['required']);
+                }
+                if (array_key_exists('help', $chargen)) {
+                    $help = $chargen['help'];
+                    unset($chargen['help']);
+                }
+                $dbw->insert( 'fate_chargen', $chargen );
+                $chargen_id = $dbw->insertId();
+
+                if ($required) {
+                    foreach ($required as $stat) {
+                        $new_requirement = array(
+                            'chargen_id' => $chargen_id,
+                            'parent_id' => $parent_ids[$chargen['stat_type']][$stat]
+                        );
+                        $dbw->insert( 'fate_chargen_required', $new_requirement );
+                    }
+                }
+                if ($help) {
+                    foreach ($help as $h) {
+                        $new_help = array(
+                            'chargen_id' => $chargen_id,
+                            'parent_id' => $parent_ids[$chargen['stat_type']][$h->stat],
+                            'help_text' => $h->text
+                        );
+                        $dbw->insert( 'fate_chargen_help', $new_help );
+                    }
+                }
+            }
+        }
+        // We also need a fractal to catch aspects for the game world; create that here
+        $world = array(
+            'game_id' => $game_id,
+            'fractal_name' => 'Game World',
+            'fractal_type' => 'Setting',
+            'create_date' => $dbw->timestamp(),
+            'update_date' => $dbw->timestamp()
+        );
+        $dbw->insert('fate_fractal', $world);
+
         $new_link = Linker::link($this->getPageTitle()->getSubpage("View"), "View New Game", array(), array( 'game_id' => $game_id ), array ( 'forcearticlepath' ) );
         $list_link = Linker::link($this->getPageTitle(), "List All Games", array(), array(), array ( 'forcearticlepath' ) );
         $results = "<p>New game was created!<ul><li>$new_link</li><li>$list_link</li></ul></p>";
@@ -1409,8 +1655,16 @@ EOT;
                             $table .= "<table class='wikitable'><caption>Characters<caption>".
                                       "<tr><th>Character Name</th><th>Wiki Name</th><th>Status</th></tr>";
                             foreach ($characters as $character) {
+                                $page = 'Special:FateStats';
+                                $subpage = 'ViewSheet';
+                                $label = '';
+                                if ($character['submit_date'] && !$character['approve_date']) {
+                                    $page = 'Special:FateGame';
+                                    $subpage = 'ApproveCharacter';
+                                    $label = ' (Review for Approval)';
+                                }
                                 $table .= "<tr><td>" .
-                                          Linker::link(Title::newFromText('Special:FateStats')->getSubpage("ViewSheet"), $character[name], array(), array( 'fractal_id' => $character[fractal_id] ), array ( 'forcearticlepath' ) ) .
+                                          Linker::link(Title::newFromText($page)->getSubpage($subpage), $character[name] . $label, array(), array( 'fractal_id' => $character[fractal_id] ), array ( 'forcearticlepath' ) ) .
                                           "</td><td>".
                                           Linker::link(Title::newFromText('User:' . $character[user_name]), $character[user_name], array(), array(), array( 'forcearticlepath' ) ) .
                                           "</td><td>";

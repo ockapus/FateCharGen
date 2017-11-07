@@ -12,9 +12,11 @@
         "FateCharGenHooks": "FateCharGen.hooks.php",
         "FateGame": "includes/FateGame.php",
         "FateFractal": "includes/FateFractal.php",
+        "FateChargen": "includes/FateChargen.php",
         "FateGameGlobals": "includes/FateGameGlobals.php",
         "SpecialFateGame": "includes/specials/SpecialFateGame.php",
-        "SpecialFateStats": "includes/specials/SpecialFateStats.php"
+        "SpecialFateStats": "includes/specials/SpecialFateStats.php",
+        "SpecialFateChargen": "includes/specials/SpecialFateChargen.php"
     },
     "ExtensionMessagesFiles": {
         "FateCharGenAlias": "FateCharGen.i18n.alias.php"
@@ -47,7 +49,8 @@
     },
     "SpecialPages": {
         "FateGame": "SpecialFateGame",
-        "FateStats": "SpecialFateStats"
+        "FateStats": "SpecialFateStats",
+        "FateChargen": "SpecialFateChargen"
     },
     "GroupPermissions": {
        "muxstaff": {

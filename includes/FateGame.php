@@ -29,6 +29,7 @@ class FateGame {
     public $fractals;
     public $create_date;
     public $modified_date;
+    public $chargen;
 
     public function __construct( $game_id ) {
         $this->game_id = $game_id;
@@ -285,6 +286,8 @@ class FateGame {
                     }
                 }
             }
+            
+            $this->chargen = new FateChargen($game_id);
         }
     }
 

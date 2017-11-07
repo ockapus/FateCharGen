@@ -112,6 +112,7 @@ class SpecialFateStats extends SpecialPage {
 
         $this->setHeaders();
         $out->setPageTitle( $this->msg( 'fatestats' ) );
+        $out->addModules( 'ext.FateCharGen.styles' );
 
         //$out->addHelpLink('http://aliencity.org/wiki/Extension:FateCharGen', true);
 
@@ -1184,23 +1185,24 @@ EOT;
             $table .= "<tr><td colspan=100%>No Characters Found</td></tr>";
         } else {
             foreach ($fractal_list as $fractal) {
-                $subpage = "ViewSheet";
+                $name = $fractal->canon_name;
+                $link = Linker::link(Title::newFromText('Special:FateChargen'), $name, array(), array( 'fractal_id' => $fractal->fractal_id, 'action' => 'section' ));
                 $status = "Created";
                 $status_date = $fractal->create_date;
-                $name = $fractal->canon_name;
                 if ($fractal->frozen_date) {
                     $status = "Frozen";
+                    $link = Linker::link(Title::newFromText('Special:FateStats')->getSubpage('ViewSheet'), $name, array(), array( 'fractal_id' => $fractal->fractal_id ));
                     $status_date = $fractal->frozen_date;
                 } elseif ($fractal->approve_date) {
                     $status = "Approved";
+                    $link = Linker::link(Title::newFromText('Special:FateStats')->getSubpage('ViewSheet'), $name, array(), array( 'fractal_id' => $fractal->fractal_id ));
                     $status_date = $fractal->approve_date;
                 } elseif ($fractal->submit_date) {
                     $status = "Submitted";
+                    $link = Linker::link(Title::newFromText('Special:FateChargen'), $name, array(), array( 'fractal_id' => $fractal->fractal_id, 'action' => 'review' ));
                     $status_date = $fractal->submit_date;
                 }
-                $table .= "<tr><td>" .
-                    Linker::link($this->getPageTitle()->getSubpage($subpage), $name, array(), array( 'fractal_id' => $fractal->fractal_id ), array( 'forcearticalpath' ) ) .
-                    "</td><td>";
+                $table .= "<tr><td>$link</td><td>";
                 if ($user->isAllowed('fatestaff')) {
                     $table .= Linker::link(Title::newFromText('Special:FateGame')->getSubpage('View'), $fractal->game_name, array(), array( 'game_id' => $fractal->game_id ), array( 'forcearticlepath' ) );
                 } else {

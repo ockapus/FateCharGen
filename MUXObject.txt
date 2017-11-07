@@ -16,6 +16,7 @@ Add to Cron List:
 &errors_to fcco=#14
 &colsize fcco=25
 &va fcco= <db # of the jobs database>
+&vc fcco= <db # of Job Parent Object>
 @fo me=&last_fractal_update fcco=[mw_timestamp()]
 @fo me=&last_game_update fcco=[mw_timestamp()]
 @tel [create(Games Database,10)]=fcco
@@ -61,7 +62,12 @@ Add to Cron List:
                 [set(%q3,create_date:[mw_timetodate([extract([rsrec(|)],3,1,|)])])],
                 [setq(3,[u(%q2/_fate_stats)])]
             )]
-            [if([extract([rsrec(|)],4,1,|)],[set(%q3,submit_date:[mw_timetodate([extract([rsrec(|)],4,1,|)])])])]
+            [if([extract([rsrec(|)],4,1,|)],
+                [if([not([hasattr(%q3,submit_date)])],
+                    [trigger(%va/TRIG_CREATE,%q2,[locate(%vc,APPS,i)],2,Application by [name(%q2)],[name(%q2)] has submitted their stats for approval. They can be reviewed at the following URL:%r%thttp://deadauthors.net/wiki/Special:FateGame/ApproveCharacter?fractal_id=%q0)]
+                )]
+                [set(%q3,submit_date:[mw_timetodate([extract([rsrec(|)],4,1,|)])])]
+            )]
             [if([extract([rsrec(|)],5,1,|)],[set(%q3,approve_date:[mw_timetodate([extract([rsrec(|)],5,1,|)])])])]
             [if([extract([rsrec(|)],6,1,|)],[set(%q3,frozen_date:[mw_timetodate([extract([rsrec(|)],6,1,|)])])])]
             ,

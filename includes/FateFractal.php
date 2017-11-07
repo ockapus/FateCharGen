@@ -9,13 +9,14 @@ class FateFractal {
     public $fractal_type;
     public $is_private;
     public $create_date;
-    public $submid_date;
+    public $submit_date;
     public $approve_date;
     public $frozen_date;
     public $stats;
-    
+    public $chargen;
+
     // TODO: Implement handling for Conditions
-    
+
     public function __construct( $param1, $param2 = NULL ) {
         $dbr = wfGetDB(DB_SLAVE);
         if (is_numeric($param1)) {
@@ -35,7 +36,7 @@ class FateFractal {
                 $this->fractal_id = $find_fractal->{fractal_id};
             }
         }
-        
+
         $data = $dbr->selectRow(
             array( 'f' => 'fate_fractal',
                    'r' => 'muxregister_register' ),
@@ -55,7 +56,7 @@ class FateFractal {
             array(),
             array( 'r' => array( 'LEFT JOIN', 'f.register_id = r.register_id' ) )
         );
-        
+
         if ($data) {
             $this->fate_game = new FateGame( $data->{game_id} );
             $this->game_id = $data->{game_id};
@@ -68,7 +69,8 @@ class FateFractal {
             $this->submit_date = $data->{submit_date};
             $this->approve_date = $data->{approve_date};
             $this->frozen_date = $data->{frozen_date};
-            
+            $this->chargen = NULL;
+
             $stat_data = $dbr->select(
                 'fate_fractal_stat',
                 '*',
@@ -111,7 +113,7 @@ class FateFractal {
                     }
                 }
             }
-            
+
             $pending_data = $dbr->select(
                 'fate_pending_stat',
                 '*',
@@ -133,7 +135,25 @@ class FateFractal {
                     $this->pending_stats_by_id[$stat->{pending_stat_id}] = $stat;
                 }
             }
-            
+
+            # Only characters may have pending chargen stats, so only look up for them
+            if ($this->fractal_type == 'Character') {
+                $this->chargen = array();
+                $chargen_data = $dbr->select(
+                    'fate_chargen_stat',
+                    '*',
+                    array( 'fractal_id' => $this->fractal_id )
+                );
+                if ($chargen_data->numRows() > 0) {
+                    foreach ($chargen_data as $stat) {
+                        $this->chargen[$stat->field_name] = array(
+                            'id' => $stat->chargen_stat_id,
+                            'value' => $stat->field_value
+                        );
+                    }
+                }
+            }
+
             /* Do re-sorting as necessary for various types */
             if (array_key_exists(FateGameGlobals::STAT_ASPECT, $this->stats)) {
                 @usort($this->stats[FateGameGlobals::STAT_ASPECT], function($a, $b) {
@@ -201,19 +221,19 @@ class FateFractal {
             }
         }
     }
-    
+
     public function resetModeSkills() {
         if ($this->fate_game->skill_distribution == FateGameGlobals::SKILL_DISTRIBUTION_MODES) {
             $dbr = wfGetDB(DB_SLAVE);
             $dbw = wfGetDB(DB_MASTER);
-         
+
             // Delete Current skills
             $dbw->delete(
                 'fate_fractal_stat',
                 array( 'fractal_id' => $this->fractal_id,
                        'stat_type' => FateGameGlobals::STAT_SKILL )
             );
-            
+
             // Get modes
             $modes = $dbr->select(
                 'fate_fractal_stat',
@@ -221,7 +241,7 @@ class FateFractal {
                 array( 'fractal_id' => $this->fractal_id,
                        'stat_type' => FateGameGlobals::STAT_MODE )
             );
-            
+
             // Get skills per mode
             $new_skills = array();
             $levels = array();
@@ -233,7 +253,7 @@ class FateFractal {
                     }
                 }
             }
-            
+
             // Promote skills
             sort($levels);
             $sub = $levels;
@@ -254,11 +274,11 @@ class FateFractal {
                     }
                 }
             }
-            
+
             // Save new skills
             foreach ($new_skills as $mode_level => $skill_list) {
                 foreach ($skill_list as $skill) {
-                    $inserts = array( 
+                    $inserts = array(
                         'fractal_id' => $this->fractal_id,
                         'stat_type' => FateGameGlobals::STAT_SKILL,
                         'stat_label' => $this->fate_game->skills_by_id[$skill['id']]['label'],
@@ -273,7 +293,7 @@ class FateFractal {
             }
         }
     }
-    
+
     public function getFractalBlock( $collapse = 0, $secret = 0 ) {
         $class = '';
         $table_class = '';
@@ -289,7 +309,7 @@ EOT;
         if (array_key_exists(FateGameGlobals::STAT_ASPECT, $this->stats)) {
             $last_label = '';
             $first = 1;
-            
+
             foreach ($this->stats[FateGameGlobals::STAT_ASPECT] as $aspect) {
                 if ($secret && $aspect->{is_secret}) {
                     continue;
@@ -312,7 +332,7 @@ EOT;
                 $block .= "</td></tr>";
             }
         }
-        
+
         if (array_key_exists(FateGameGlobals::STAT_SKILL, $this->stats)) {
             $ladder = FateGameGlobals::getLadder();
             $last_label = '';
@@ -357,7 +377,7 @@ EOT;
                 }
             }
         }
-        
+
         if (array_key_exists(FateGameGlobals::STAT_MOOK, $this->stats)) {
             $levels = FateGameGlobals::getMookLevels();
             $last_label = '';
@@ -381,19 +401,19 @@ EOT;
                 $block .= "</td></tr>";
             }
         }
-        
+
         if (array_key_exists(FateGameGlobals::STAT_STUNT, $this->stats)) {
             $block .= "<tr><td class='section_label'>Stunts:</td><td>";
             foreach ($this->stats[FateGameGlobals::STAT_STUNT] as $stunt) {
                 if ($secret && $stunt->{is_secret}) {
                     continue;
                 }
-                $block .= "<span class='stunt_name'>" . $stunt->{stat_field} . ".</span> " . 
+                $block .= "<span class='stunt_name'>" . $stunt->{stat_field} . ".</span> " .
                           $stunt->{stat_description} . "<br/>\n";
             }
             $block .= "</td></tr>";
         }
-        
+
         if (array_key_exists(FateGameGlobals::STAT_STRESS, $this->stats)) {
             $block .= "<tr><td class='section_label'>Stress:</td><td>".
                       "<table width=100%><tr>";
@@ -410,15 +430,93 @@ EOT;
             }
             $block .= "</tr></table></td></tr>";
         }
-        
+
         $block .= "</table></div><br/>";
         return $block;
     }
-    
+
+    # TODO: This and the getFractalBlock function can probably not only be refactrored
+    # together, but each subsection itself (with the loops and the use of $first and
+    # $last_label) factored out into a separate function for further cleanliness.
+    public function getChargenFractalBlock() {
+        $block = "<div id='fractalblock'><div class='name'>{$this->name}</div><table width='100%'>";
+
+        $last_label = '';
+        $first = true;
+        $form_array = $this->fate_game->chargen->calculateFormArray($this->fate_game, FateGameGlobals::STAT_ASPECT);
+        for ($i = 0; $i < count($form_array); $i++) {
+            $parent_id = $form_array[$i];
+            $this_label = ($parent_id ? $this->fate_game->aspects_by_id[$parent_id]['label'] : 'Other Aspects');
+            if ($this_label != $last_label) {
+                $last_label = $this_label;
+                if (!$first) {
+                    $block .= "</td></tr>";
+                } else {
+                    $first = false;
+                }
+                $block .= "<tr><td class='section_label'>$this_label:</td><td class='aspect_field'>";
+            } else {
+                $block .= ", ";
+            }
+            $block .= $this->chargen["aspect_field_$i"]['value'];
+        }
+        if ($last_label) {
+            $block .= "</td></tr>";
+        }
+
+        $ladder = FateGameGlobals::getLadder();
+        $last_label = '';
+        $first = true;
+        if ($this->fate_game->skill_distribution == FateGameGlobals::SKILL_DISTRIBUTION_APPROACHES) {
+            $block .= "<tr><td class='section_label'>" . $this->fate_game->skill_alternative . ":</td><td>";
+            for ($i = 0; $i < count($this->fate_game->skill_points); $i++) {
+                $this_label = $ladder[$this->fate_game->skill_points[$i]];
+                if ($this_label != $last_label) {
+                    $last_label = $this_label;
+                    if (!$first) {
+                        $block .= "<br/>";
+                    } else {
+                        $first = false;
+                    }
+                    $block .= "$this_label (+" . $this->fate_game->skill_points[$i] . "): ";
+                } else {
+                    $block .= ", ";
+                }
+                $block .= $this->fate_game->skills_by_id[$this->chargen["skill_parent_$i"]['value']]['label'];
+            }
+            if ($last_label) {
+                $block .= "</td></tr>";
+            }
+        }
+
+        $block .= "<tr><td class='section_label'>Stunts:</td><td>";
+        $stunts = array();
+        foreach ($this->chargen as $key => $value) {
+            if (preg_match("/^stunt_(.+)_(\d+)$/", $key, $matches)) {
+                if (! is_array($stunts[$matches[2]])) {
+                    $stunts[$matches[2]] = array();
+                }
+                $stunts[$matches[2]][$matches[1]] = $value['value'];
+            }
+        }
+        if (count($stunts) > 0) {
+            foreach ($stunts as $stunt) {
+                $block .= "<span class='stunt_name'>" . $stunt['field'] . "</span>" .
+                          $stunt['description'] . "<br/>";
+            }
+        }  else {
+            $block .= "<span style='font-style: italic'>None Set</span>";
+        }
+        $block .= "</td></tr>";
+
+        $block .= "</table></div><br/>";
+        return $block;
+    }
+
     public function getFractalSheet() {
         $sheet = <<< EOT
             <style type='text/css'>
-                #charsheet h2 {  
+                #charsheet h2 {
                     margin: 0;
                     font-weight: normal;
                     position: relative;
@@ -430,7 +528,7 @@ EOT;
                     border-radius: 0 10px 0 0;
                     font-family: Tahoma, Geneva, sans-serif;
                 }
-                
+
                 #charsheet .modes h3 { color: #295079; font-family: Tahoma, Geneva, sans-serif; text-align: right; vertical-align: middle; padding: 0px; margin: 0px; }
                 #charsheet .modes h4 { color: #295079; font-family: Tahoma, Geneva, sans-serif; white-space: nowrap; padding: 0px; }
                 #charsheet .modes { width: 100%; border-spacing: 0px; margin-bottom: 0.5em; }
@@ -464,7 +562,7 @@ EOT;
                 $sheet .= $aspect->{stat_field} . "</div>\n";
             }
         }
-        
+
         if (array_key_exists(FateGameGlobals::STAT_SKILL, $this->stats)) {
             $sheet .= "<H2>" . strtoupper($this->fate_game->skill_alternative ? $this->fate_game->skill_alternative : 'SKILLS') . "</H2>";
             if ($this->fate_game->skill_distribution == FateGameGlobals::SKILL_DISTRIBUTION_APPROACHES) {
@@ -508,7 +606,7 @@ EOT;
             }
             /* Other Skill Distributions eventually go here */
         }
-        
+
         if (array_key_exists(FateGameGlobals::STAT_MOOK, $this->stats)) {
             $sheet .= "<h2>MOOK SKILLS</h2>\n";
             $levels = FateGameGlobals::getMookLevels();
@@ -534,7 +632,7 @@ EOT;
                 $sheet .= "</div>";
             }
         }
-        
+
         if (array_key_exists(FateGameGlobals::STAT_STUNT, $this->stats)) {
             $sheet .= "<H2>STUNTS</H2>\n<div class='block'><dl>";
             foreach ($this->stats[FateGameGlobals::STAT_STUNT] as $stunt) {
@@ -543,7 +641,7 @@ EOT;
             }
             $sheet .= "</dl></div>\n";
         }
-            
+
         if (array_key_exists(FateGameGlobals::STAT_CONSEQUENCE, $this->stats)) {
             $sheet .= "<H2>CONSEQUENCES</H2>\n";
             foreach ($this->stats[FateGameGlobals::STAT_CONSEQUENCE] as $consequence) {
@@ -552,7 +650,7 @@ EOT;
                           ($consequence->{stat_field} ? $consequence->{stat_field} : '&nbsp;') . "</div>\n";
             }
         }
-        
+
         $stress_table = '';
         $fate_table = '';
         if (array_key_exists(FateGameGlobals::STAT_STRESS, $this->stats)) {
@@ -567,7 +665,7 @@ EOT;
             }
             $stress_table .= "</table>";
         }
-        
+
         if (array_key_exists(FateGameGlobals::STAT_FATE, $this->stats) || array_key_exists(FateGameGlobals::STAT_REFRESH, $this->stats)) {
             $fate_table .= "<table><tr><td><h2>FATE POINTS</h2></td></tr><tr><td>";
             if (array_key_exists(FateGameGlobals::STAT_REFRESH, $this->stats)) {
@@ -580,7 +678,7 @@ EOT;
             }
             $fate_table .= "</td></tr></table>";
         }
-        
+
         if ($stress_table || $fate_table) {
             $sheet .= "<table><tr>";
             if ($stress_table) {
@@ -591,7 +689,7 @@ EOT;
             }
             $sheet .= "</tr></table>";
         }
-        
+
         $sheet .= "</div>";
         return $sheet;
     }

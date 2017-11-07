@@ -62,5 +62,46 @@
             "label": "Severe",
             "value": 6
         }
+    ],
+    "chargen": [
+        {
+            "stat": "aspect",
+            "label": "Aspects",
+            "instruction": "An aspect is a word, phrase, or sentence that describes something centrally important to your character. It can be a motto your character lives by, a personality quirk, a description of a relationship you have with another character, an important possession or bit of equipment your character has, or any other part of your character that is vitally important.",
+            "required": ["Concept", "Talent"],
+            "help": [
+                {
+                    "stat": "Agenda",
+                    "text": "Agendas are a type of secret charcter aspect that represents something hidden aabout you -- an ulterior motive, a power you've been keeping secret, or something else you'd want to keep hidden."
+                },
+                {
+                    "stat": "Concept",
+                    "text": "Concept sums up your character's deal in one short phrase. It's how you deal with problems and the source of most of them."
+                },
+                {
+                    "stat": "Talent",
+                    "text": "Your Talent aspect is a specific skill, hobby, or occupation that your character is great at."
+                },
+                {
+                    "stat": "Student",
+                    "text": "Your Student aspect describes something important about your place in the Academy - a subject you're good at, a reputation with your classmates, a specific relationship with a student or teacher, and more."
+                },
+                {
+                    "stat": "Drive",
+                    "text": "Your Drive aspect is something that motivates most of your character's actions, like curiosity, a need for recognition, a terrible fear, a best friend, a worst enemy, or something else."
+                }
+            ]
+        },
+        {
+            "stat": "skill",
+            "label": "Approaches",
+            "instruction": "Approaches are descriptions of how you accomplish tasks. Everyone has the same six approaches, and each is rated with a bonus that's applied when you roll to attempt some related task. Choose one at Good (+3), two at Fair (+2), two at Average (+1), and one at Mediocre (+0).",
+            "required": 6
+        },
+        {
+            "stat": "stunt",
+            "label": "Stunts",
+            "instruction": "A stunt is a special trait that changes the way an approach works for your character. Generally, stunts give you a bonus to a certain approach when used with a particular action under specific circumstances. You can start with up to three, and can gain more as your character advances."
+        }
     ]
 }

@@ -4,5 +4,6 @@
     },
     "fategame": "Fate: Game Configuration",
     "fategame-desc": "Game Configuration for Fate, for integration with MUX.",
-    "fatestats": "Fate: Stats"
+    "fatestats": "Fate: Stats",
+    "fatechargen": "Fate: Chargen"
 }
